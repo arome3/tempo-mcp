@@ -1,0 +1,55 @@
+{
+  "invoices": [
+    {
+      "id": "INV-2024-0042",
+      "vendor": "Acme Corp",
+      "vendorAddress": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEbb",
+      "amount": "15000.00",
+      "currency": "AlphaUSD",
+      "dueDate": "2024-12-15",
+      "status": "pending",
+      "description": "Software licensing Q4 2024"
+    },
+    {
+      "id": "INV-2024-0043",
+      "vendor": "CloudHost Inc",
+      "vendorAddress": "0x8ba1f109551bD432803012645Ac136ddd64DBA72",
+      "amount": "2500.00",
+      "currency": "AlphaUSD",
+      "dueDate": "2024-12-20",
+      "status": "pending",
+      "description": "Cloud hosting December 2024"
+    },
+    {
+      "id": "INV-2024-0044",
+      "vendor": "SupplyCo Ltd",
+      "vendorAddress": "0xdD2FD4581271e230360230F9337D5c0430Bf44C0",
+      "amount": "5000.00",
+      "currency": "AlphaUSD",
+      "dueDate": "2024-12-14",
+      "status": "pending",
+      "description": "Office supplies order #4521"
+    },
+    {
+      "id": "INV-2024-0045",
+      "vendor": "WebHost Services",
+      "vendorAddress": "0x2546BcD3c84621e976D8185a91A922aE77ECEc30",
+      "amount": "1200.00",
+      "currency": "AlphaUSD",
+      "dueDate": "2024-12-16",
+      "status": "pending",
+      "description": "Domain and SSL renewals"
+    },
+    {
+      "id": "INV-2024-0040",
+      "vendor": "DataCo Analytics",
+      "vendorAddress": "0xbDA5747bFD65F08deb54cb465eB87D40e51B197E",
+      "amount": "8500.00",
+      "currency": "AlphaUSD",
+      "dueDate": "2024-11-30",
+      "status": "paid",
+      "paidTxHash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
+      "description": "Analytics platform subscription"
+    }
+  ]
+}

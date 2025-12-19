@@ -1,0 +1,72 @@
+{
+  "name": "tempo-mcp",
+  "version": "1.0.0",
+  "description": "MCP server for Tempo blockchain stablecoin payments",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "tempo-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arome/tempo-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/arome/tempo-mcp/issues"
+  },
+  "homepage": "https://github.com/arome/tempo-mcp#readme",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "start": "node dist/index.js",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:e2e:write": "E2E_WRITE=true vitest run --config vitest.e2e.config.ts",
+    "lint": "eslint src/",
+    "format": "prettier --write src/",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "mcp",
+    "tempo",
+    "blockchain",
+    "stablecoin",
+    "payments",
+    "ai-agent",
+    "model-context-protocol"
+  ],
+  "author": "Arome",
+  "license": "MIT",
+  "dependencies": {
+    "@ethersproject/json-wallets": "^5.8.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@turnkey/sdk-server": "^4.12.1",
+    "@turnkey/viem": "^0.14.18",
+    "dotenv": "^16.4.5",
+    "pino": "^8.21.0",
+    "tempo.ts": "^0.10.0",
+    "viem": "^2.21.0",
+    "yaml": "^2.8.2",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "@vitest/coverage-v8": "^1.6.1",
+    "eslint": "^8.57.0",
+    "prettier": "^3.4.0",
+    "tsup": "^8.3.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^1.6.0"
+  }
+}

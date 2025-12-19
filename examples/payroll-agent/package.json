@@ -1,0 +1,19 @@
+{
+  "name": "tempo-example-payroll-agent",
+  "version": "1.0.0",
+  "description": "Payroll processing agent using tempo-mcp",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "validate": "tsx src/index.ts --validate-only",
+    "process": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "@types/node": "^20.17.0"
+  }
+}
