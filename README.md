@@ -2,7 +2,7 @@
 
 **MCP server for Tempo blockchain stablecoin payments** — Enable AI agents to autonomously execute real-world payments.
 
-> **🧪 Testnet Only** — This MCP currently operates on Tempo testnet. No real funds are used. Perfect for experimentation and development!
+> **Testnet Only** — This MCP currently operates on Tempo testnet. No real funds are used. Perfect for experimentation and development!
 
 ---
 
@@ -522,27 +522,6 @@ npm run test:run -- --coverage
 # Run specific test file
 npm test -- src/security/spending-limits.test.ts
 ```
-
-### Project Structure
-
-```
-tempo-mcp/
-├── src/
-│   ├── index.ts           # Server entry point
-│   ├── server.ts          # MCP server instance
-│   ├── config/            # Configuration system
-│   ├── tools/             # MCP tool implementations
-│   ├── resources/         # MCP resource handlers
-│   ├── prompts/           # MCP prompt templates
-│   ├── services/          # Business logic
-│   ├── security/          # Security layer
-│   ├── types/             # TypeScript types
-│   └── utils/             # Utilities
-├── examples/              # Example agents
-├── tests/                 # Test suite
-└── dist/                  # Compiled output
-```
-
 ---
 
 ## Network Information
