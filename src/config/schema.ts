@@ -197,6 +197,10 @@ export const advancedSchema = z.object({
   confirmations: z.number().int().nonnegative().default(1),
   /** Transaction timeout in milliseconds */
   timeout: z.number().int().positive().default(30000),
+  /** Chunk size for concurrent transactions to avoid RPC rate limits */
+  concurrentChunkSize: z.number().int().positive().default(50),
+  /** Delay in milliseconds between concurrent transaction chunks */
+  concurrentChunkDelay: z.number().int().min(0).default(500),
 });
 
 // =============================================================================

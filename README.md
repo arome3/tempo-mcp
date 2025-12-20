@@ -36,6 +36,7 @@ Then ask Claude: *"What's my AlphaUSD balance?"*
 | "Send 100 AlphaUSD to 0x..." | Sends a single payment |
 | "Pay invoice INV-001 for $500 to 0x..." | Payment with memo for reconciliation |
 | "Process payroll from employees.csv" | Batch payments to multiple recipients |
+| "Send concurrent payments to 50 vendors" | Parallel payments (10-100x faster than sequential) |
 | "Swap 1000 AlphaUSD to BetaUSD" | Exchange stablecoins on Tempo DEX |
 | "Schedule payment of $200 to 0x... for tomorrow 9am" | Future-dated payment |
 | "Who has the ISSUER_ROLE on AlphaUSD?" | Query token role members |
@@ -77,6 +78,7 @@ AI agents are evolving from assistants into autonomous actors that can take real
 ### Payment Operations
 - **Single Payments** — Send TIP-20 stablecoin transfers with optional memos
 - **Batch Payments** — Atomic multi-recipient transfers (up to 100 recipients)
+- **Concurrent Payments** — Parallel execution using nonceKeys (10-100x faster for large batches)
 - **Scheduled Payments** — Protocol-level future payments with execution windows
 - **Sponsored Payments** — Gasless transactions where a sponsor pays fees (local key or relay service)
 
@@ -241,6 +243,9 @@ const result = await client.callTool({
 | `send_sponsored_payment` | Gasless payment (sponsor pays fees) | `token`, `to`, `amount`, `useRelay?` |
 | `estimate_sponsored_gas` | Estimate gas for sponsored tx | `token`, `to`, `amount`, `feeToken?` |
 | `get_sponsor_balance` | Check sponsor's token balance | `sponsor?`, `token?` |
+| `send_concurrent_payments` | Parallel payments using nonceKeys (10-100x faster) | `payments[]`, `startNonceKey?` |
+| `get_nonce_for_key` | Get nonce for a specific nonceKey | `nonceKey`, `address?` |
+| `list_active_nonce_keys` | List all nonceKeys with nonce > 0 | `address?` |
 
 ### Query Tools (Low Risk)
 

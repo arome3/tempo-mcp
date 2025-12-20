@@ -13,6 +13,7 @@
  * - roles: TIP-20 role management (grant, revoke, pause, unpause)
  * - policy: TIP-403 compliance (whitelist, blacklist, transfer validation)
  * - sponsorship: Fee-sponsored gasless transactions
+ * - concurrent: Parallel transaction execution via nonceKey
  */
 
 import { registerPaymentTools } from './payments/index.js';
@@ -22,6 +23,7 @@ import { registerAccountTools } from './account/index.js';
 import { registerRoleTools } from './roles/index.js';
 import { registerPolicyTools } from './policy/index.js';
 import { registerSponsorshipTools } from './sponsorship/index.js';
+import { registerConcurrentTools } from './concurrent/index.js';
 
 /**
  * Register all MCP tools with the server.
@@ -38,4 +40,5 @@ export function registerAllTools(): void {
   registerRoleTools();
   registerPolicyTools();
   registerSponsorshipTools();
+  registerConcurrentTools();
 }

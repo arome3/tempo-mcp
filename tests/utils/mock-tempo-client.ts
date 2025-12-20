@@ -216,6 +216,16 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
 
     // Fee token for gas payments
     feeToken: TEST_TOKENS.ALPHA_USD as `0x${string}`,
+
+    // Concurrent transaction support
+    sendConcurrentTransaction: vi.fn().mockImplementation(
+      (params: { to: string; data: string; nonce: number; nonceKey: number }) => {
+        maybeThrow('sendConcurrentTransaction');
+        // Generate unique hash per nonceKey for testing
+        const keyHex = params.nonceKey.toString(16).padStart(2, '0');
+        return `0x${keyHex}${'a'.repeat(62)}` as `0x${string}`;
+      }
+    ),
   };
 }
 

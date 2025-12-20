@@ -97,6 +97,8 @@ export const defaultConfig: TempoMcpConfig = {
     gasMultiplier: 1.2, // 20% buffer on gas estimates
     confirmations: 1, // Wait for 1 block confirmation
     timeout: 30000, // 30 second transaction timeout
+    concurrentChunkSize: 50, // Process 50 concurrent transactions per chunk
+    concurrentChunkDelay: 500, // 500ms delay between chunks
   },
 
   feeSponsorship: {
