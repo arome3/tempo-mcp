@@ -80,6 +80,14 @@ function parseFloat(value: string | undefined): number | undefined {
  *   TEMPO_GAS_MULTIPLIER    - Gas estimate multiplier
  *   TEMPO_CONFIRMATIONS     - Block confirmations to wait
  *   TEMPO_TIMEOUT           - Transaction timeout (ms)
+ *
+ * Fee Sponsorship:
+ *   TEMPO_FEE_SPONSORSHIP_ENABLED - Enable fee sponsorship (true/false)
+ *   TEMPO_FEE_PAYER_TYPE          - Fee payer type (local/relay)
+ *   TEMPO_FEE_PAYER_ADDRESS       - Local fee payer address
+ *   TEMPO_FEE_PAYER_KEY           - Local fee payer private key
+ *   TEMPO_FEE_RELAY_URL           - Relay service URL
+ *   TEMPO_MAX_SPONSORED_DAILY     - Max USD to sponsor per day
  */
 export function loadFromEnv(): Record<string, unknown> {
   const env = process.env;
@@ -153,6 +161,17 @@ export function loadFromEnv(): Record<string, unknown> {
       gasMultiplier: parseFloat(env.TEMPO_GAS_MULTIPLIER),
       confirmations: parseInt(env.TEMPO_CONFIRMATIONS),
       timeout: parseInt(env.TEMPO_TIMEOUT),
+    },
+
+    feeSponsorship: {
+      enabled: parseBoolean(env.TEMPO_FEE_SPONSORSHIP_ENABLED),
+      feePayer: {
+        type: env.TEMPO_FEE_PAYER_TYPE as 'local' | 'relay' | undefined,
+        address: env.TEMPO_FEE_PAYER_ADDRESS,
+        privateKey: env.TEMPO_FEE_PAYER_KEY,
+        relayUrl: env.TEMPO_FEE_RELAY_URL,
+      },
+      maxSponsoredPerDay: env.TEMPO_MAX_SPONSORED_DAILY,
     },
   };
 }

@@ -200,6 +200,33 @@ export const advancedSchema = z.object({
 });
 
 // =============================================================================
+// Fee Sponsorship Configuration
+// =============================================================================
+
+export const feePayerSchema = z.object({
+  /** Fee payer type: local (private key) or relay (external service) */
+  type: z.enum(['local', 'relay']).default('local'),
+  /** Fee payer address (required for local type) */
+  address: z.string().optional(),
+  /** Fee payer private key (required for local type, prefer env var) */
+  privateKey: z.string().optional(),
+  /** Relay service URL for sponsored transactions */
+  relayUrl: z
+    .string()
+    .url()
+    .default('https://sponsor.testnet.tempo.xyz'),
+});
+
+export const feeSponsorshipSchema = z.object({
+  /** Enable fee sponsorship feature */
+  enabled: z.boolean().default(false),
+  /** Fee payer configuration */
+  feePayer: feePayerSchema.default({}),
+  /** Maximum USD amount to sponsor per day */
+  maxSponsoredPerDay: z.string().default('1000'),
+});
+
+// =============================================================================
 // Complete Configuration Schema
 // =============================================================================
 
@@ -218,6 +245,8 @@ export const configSchema = z.object({
   logging: loggingSchema.default({}),
   /** Advanced configuration */
   advanced: advancedSchema.default({}),
+  /** Fee sponsorship configuration */
+  feeSponsorship: feeSponsorshipSchema.default({}),
 });
 
 // =============================================================================
@@ -256,3 +285,9 @@ export type LoggingConfig = z.infer<typeof loggingSchema>;
 
 /** Advanced configuration type */
 export type AdvancedConfig = z.infer<typeof advancedSchema>;
+
+/** Fee payer configuration type */
+export type FeePayerConfig = z.infer<typeof feePayerSchema>;
+
+/** Fee sponsorship configuration type */
+export type FeeSponsorshipConfig = z.infer<typeof feeSponsorshipSchema>;

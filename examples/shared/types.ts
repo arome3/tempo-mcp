@@ -569,3 +569,61 @@ export interface BurnBlockedTokensResult {
   timestamp?: string;
   error?: ErrorDetails;
 }
+
+// =============================================================================
+// Fee Sponsorship Types
+// =============================================================================
+
+export interface SponsoredPaymentInput {
+  token: string;
+  to: string;
+  amount: string;
+  memo?: string;
+  feePayer?: string;
+  useRelay?: boolean;
+}
+
+export interface SponsoredPaymentResult {
+  success: boolean;
+  transactionHash?: string;
+  blockNumber?: number;
+  from?: string;
+  to?: string;
+  amount?: string;
+  token?: string;
+  tokenSymbol?: string;
+  memo?: string | null;
+  feePayer?: string;
+  feeAmount?: string;
+  feeToken?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
+export interface EstimateSponsoredGasInput {
+  token: string;
+  to: string;
+  amount: string;
+  feeToken?: string;
+}
+
+export interface EstimateSponsoredGasResult {
+  gasLimit: string;
+  estimatedFee: string;
+  feeToken: string;
+  feeTokenSymbol: string;
+}
+
+export interface SponsorBalanceInput {
+  sponsor?: string;
+  token?: string;
+}
+
+export interface SponsorBalanceResult {
+  balance: string;
+  balanceRaw: string;
+  sponsor: string;
+  token: string;
+  tokenSymbol: string;
+}

@@ -20,6 +20,8 @@ import {
   auditLogSchema,
   loggingSchema,
   advancedSchema,
+  feePayerSchema,
+  feeSponsorshipSchema,
   configSchema,
 } from '../../../src/config/schema.js';
 import type {
@@ -28,6 +30,8 @@ import type {
   WalletConfig,
   SecurityConfig,
   SpendingLimits,
+  FeePayerConfig,
+  FeeSponsorshipConfig,
 } from '../../../src/config/schema.js';
 
 // =============================================================================
@@ -620,6 +624,109 @@ describe('advancedSchema', () => {
 });
 
 // =============================================================================
+// Fee Sponsorship Schema Tests
+// =============================================================================
+
+describe('feePayerSchema', () => {
+  it('should provide default values', () => {
+    const result = feePayerSchema.parse({});
+
+    expect(result.type).toBe('local');
+    expect(result.relayUrl).toBe('https://sponsor.testnet.tempo.xyz');
+    expect(result.address).toBeUndefined();
+    expect(result.privateKey).toBeUndefined();
+  });
+
+  it('should accept local type with address and key', () => {
+    const result = feePayerSchema.parse({
+      type: 'local',
+      address: '0x1234567890123456789012345678901234567890',
+      privateKey: '0xabcdef',
+    });
+
+    expect(result.type).toBe('local');
+    expect(result.address).toBe('0x1234567890123456789012345678901234567890');
+    expect(result.privateKey).toBe('0xabcdef');
+  });
+
+  it('should accept relay type with custom URL', () => {
+    const result = feePayerSchema.parse({
+      type: 'relay',
+      relayUrl: 'https://custom.relay.example.com',
+    });
+
+    expect(result.type).toBe('relay');
+    expect(result.relayUrl).toBe('https://custom.relay.example.com');
+  });
+
+  it('should reject invalid fee payer type', () => {
+    expect(() =>
+      feePayerSchema.parse({
+        type: 'invalid',
+      })
+    ).toThrow();
+  });
+
+  it('should reject invalid relay URL', () => {
+    expect(() =>
+      feePayerSchema.parse({
+        relayUrl: 'not-a-url',
+      })
+    ).toThrow();
+  });
+});
+
+describe('feeSponsorshipSchema', () => {
+  it('should provide defaults with sponsorship disabled', () => {
+    const result = feeSponsorshipSchema.parse({});
+
+    expect(result.enabled).toBe(false);
+    expect(result.feePayer).toBeDefined();
+    expect(result.feePayer.type).toBe('local');
+    expect(result.maxSponsoredPerDay).toBe('1000');
+  });
+
+  it('should accept enabled sponsorship with local fee payer', () => {
+    const result = feeSponsorshipSchema.parse({
+      enabled: true,
+      feePayer: {
+        type: 'local',
+        address: '0x1234567890123456789012345678901234567890',
+        privateKey: '0xprivatekey',
+      },
+      maxSponsoredPerDay: '5000',
+    });
+
+    expect(result.enabled).toBe(true);
+    expect(result.feePayer.type).toBe('local');
+    expect(result.feePayer.address).toBe('0x1234567890123456789012345678901234567890');
+    expect(result.maxSponsoredPerDay).toBe('5000');
+  });
+
+  it('should accept relay-based fee payer', () => {
+    const result = feeSponsorshipSchema.parse({
+      enabled: true,
+      feePayer: {
+        type: 'relay',
+        relayUrl: 'https://sponsor.tempo.xyz',
+      },
+    });
+
+    expect(result.enabled).toBe(true);
+    expect(result.feePayer.type).toBe('relay');
+    expect(result.feePayer.relayUrl).toBe('https://sponsor.tempo.xyz');
+  });
+
+  it('should allow string amounts for maxSponsoredPerDay', () => {
+    const result = feeSponsorshipSchema.parse({
+      maxSponsoredPerDay: '999999.99',
+    });
+
+    expect(result.maxSponsoredPerDay).toBe('999999.99');
+  });
+});
+
+// =============================================================================
 // Complete Config Schema Tests
 // =============================================================================
 
@@ -634,6 +741,8 @@ describe('configSchema', () => {
     expect(result.contracts).toBeDefined();
     expect(result.logging).toBeDefined();
     expect(result.advanced).toBeDefined();
+    expect(result.feeSponsorship).toBeDefined();
+    expect(result.feeSponsorship.enabled).toBe(false);
   });
 
   it('should accept partial configuration', () => {
@@ -709,6 +818,15 @@ describe('configSchema', () => {
         confirmations: 2,
         timeout: 45000,
       },
+      feeSponsorship: {
+        enabled: true,
+        feePayer: {
+          type: 'local' as const,
+          address: '0xfeepayer',
+          privateKey: '0xfeekey',
+        },
+        maxSponsoredPerDay: '10000',
+      },
     };
 
     const result = configSchema.parse(fullConfig);
@@ -716,6 +834,9 @@ describe('configSchema', () => {
     expect(result.network.chainId).toBe(42429);
     expect(result.security.spendingLimits.maxBatchSize).toBe(20);
     expect(result.logging.level).toBe('debug');
+    expect(result.feeSponsorship.enabled).toBe(true);
+    expect(result.feeSponsorship.feePayer.type).toBe('local');
+    expect(result.feeSponsorship.maxSponsoredPerDay).toBe('10000');
   });
 
   it('should propagate validation errors from nested schemas', () => {
