@@ -48,6 +48,12 @@ export interface MockTempoClientOptions {
   tokenDecimals?: number;
   /** Token symbol */
   tokenSymbol?: string;
+  /** Whether the token is paused */
+  isPaused?: boolean;
+  /** Role members to return for role queries */
+  roleMembers?: Record<string, string[]>;
+  /** Whether address has specific role */
+  hasRole?: boolean;
 }
 
 // =============================================================================
@@ -71,6 +77,9 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
     blockNumber = BigInt(12345),
     tokenDecimals = 6,
     tokenSymbol = 'AlphaUSD',
+    isPaused = false,
+    roleMembers = {},
+    hasRole = true,
   } = options;
 
   const maybeThrow = (method: string) => {
@@ -145,12 +154,51 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
 
     // Public client (for read operations)
     publicClient: {
-      getBlockNumber: vi.fn().mockReturnValue(blockNumber),
-      getBalance: vi.fn().mockReturnValue(balance),
-      readContract: vi.fn(),
+      getBlockNumber: vi.fn().mockResolvedValue(blockNumber),
+      getBalance: vi.fn().mockResolvedValue(balance),
+      readContract: vi.fn().mockImplementation(
+        ({
+          functionName,
+          args,
+        }: {
+          functionName: string;
+          args?: unknown[];
+        }) => {
+          maybeThrow('readContract');
+          // Handle role-related contract calls
+          if (functionName === 'hasRole') {
+            return Promise.resolve(hasRole);
+          }
+          if (functionName === 'paused') {
+            return Promise.resolve(isPaused);
+          }
+          if (functionName === 'getRoleMemberCount') {
+            const roleHash = args?.[0] as string;
+            const members = roleMembers[roleHash] || [];
+            return Promise.resolve(BigInt(members.length));
+          }
+          if (functionName === 'getRoleMember') {
+            const roleHash = args?.[0] as string;
+            const index = Number(args?.[1] ?? 0);
+            const members = roleMembers[roleHash] || [];
+            return Promise.resolve(members[index] ?? TEST_ADDRESSES.VALID);
+          }
+          // Default: return balance for balanceOf
+          if (functionName === 'balanceOf') {
+            return Promise.resolve(balance);
+          }
+          if (functionName === 'decimals') {
+            return Promise.resolve(tokenDecimals);
+          }
+          if (functionName === 'symbol') {
+            return Promise.resolve(tokenSymbol);
+          }
+          return Promise.resolve(undefined);
+        }
+      ),
       waitForTransactionReceipt: vi.fn().mockImplementation(() => {
         maybeThrow('waitForTransactionReceipt');
-        return createMockReceipt(txHash);
+        return Promise.resolve(createMockReceipt(txHash));
       }),
     },
 
@@ -165,6 +213,9 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
         return txHash;
       }),
     },
+
+    // Fee token for gas payments
+    feeToken: TEST_TOKENS.ALPHA_USD as `0x${string}`,
   };
 }
 

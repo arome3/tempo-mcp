@@ -115,6 +115,28 @@ export const TEST_AMOUNTS = {
 } as const;
 
 // =============================================================================
+// Test Roles
+// =============================================================================
+
+/**
+ * Test role names for TIP-20 role management.
+ */
+export const TEST_ROLES = {
+  /** Default admin role - has all permissions */
+  DEFAULT_ADMIN: 'DEFAULT_ADMIN_ROLE',
+  /** Issuer role - can mint and burn */
+  ISSUER: 'ISSUER_ROLE',
+  /** Pause role - can pause transfers */
+  PAUSE: 'PAUSE_ROLE',
+  /** Unpause role - can unpause transfers */
+  UNPAUSE: 'UNPAUSE_ROLE',
+  /** Burn blocked role - can burn from blocked addresses */
+  BURN_BLOCKED: 'BURN_BLOCKED_ROLE',
+  /** Invalid role name */
+  INVALID: 'INVALID_ROLE',
+} as const;
+
+// =============================================================================
 // Test Memos
 // =============================================================================
 

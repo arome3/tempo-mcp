@@ -294,3 +294,114 @@ export interface RebalanceAction {
   amount: string;
   reason: string;
 }
+
+// =============================================================================
+// Role Management Types
+// =============================================================================
+
+/**
+ * TIP-20 role names for token access control.
+ */
+export type RoleName =
+  | 'DEFAULT_ADMIN_ROLE'
+  | 'ISSUER_ROLE'
+  | 'PAUSE_ROLE'
+  | 'UNPAUSE_ROLE'
+  | 'BURN_BLOCKED_ROLE';
+
+export interface GrantRoleInput {
+  token: string;
+  role: RoleName;
+  account: string;
+}
+
+export interface RevokeRoleInput {
+  token: string;
+  role: RoleName;
+  account: string;
+}
+
+export interface RenounceRoleInput {
+  token: string;
+  role: RoleName;
+}
+
+export interface HasRoleInput {
+  token: string;
+  role: RoleName;
+  account: string;
+}
+
+export interface GetRoleMembersInput {
+  token: string;
+  role: RoleName;
+}
+
+export interface PauseTokenInput {
+  token: string;
+  reason?: string;
+}
+
+export interface UnpauseTokenInput {
+  token: string;
+  reason?: string;
+}
+
+export interface RoleTransactionResult {
+  success: boolean;
+  transactionHash?: string;
+  blockNumber?: number;
+  token?: string;
+  role?: RoleName;
+  account?: string;
+  grantedBy?: string;
+  revokedBy?: string;
+  renouncedBy?: string;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
+export interface HasRoleResult {
+  hasRole: boolean;
+  token: string;
+  role: RoleName;
+  account: string;
+  roleDescription: string;
+}
+
+export interface GetRoleMembersResult {
+  token: string;
+  role: RoleName;
+  members: string[];
+  memberCount: number;
+  roleDescription: string;
+}
+
+export interface PauseTokenResult {
+  success: boolean;
+  transactionHash?: string;
+  blockNumber?: number;
+  token?: string;
+  isPaused: boolean;
+  pausedBy?: string;
+  unpausedBy?: string;
+  reason?: string | null;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
+export interface TokenRolesInfo {
+  token: string;
+  isPaused: boolean;
+  roles: {
+    [key in RoleName]: {
+      members: string[];
+      memberCount: number;
+      description: string;
+    };
+  };
+}
