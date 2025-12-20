@@ -10,12 +10,14 @@
  * - tokens: Token creation, minting, burning, metadata queries
  * - exchange: Stablecoin swaps via native DEX
  * - account: Balance queries, transaction history, account info
+ * - roles: TIP-20 role management (grant, revoke, pause, unpause)
  */
 
 import { registerPaymentTools } from './payments/index.js';
 import { registerTokenTools } from './tokens/index.js';
 import { registerExchangeTools } from './exchange/index.js';
 import { registerAccountTools } from './account/index.js';
+import { registerRoleTools } from './roles/index.js';
 
 /**
  * Register all MCP tools with the server.
@@ -29,4 +31,5 @@ export function registerAllTools(): void {
   registerTokenTools();
   registerExchangeTools();
   registerAccountTools();
+  registerRoleTools();
 }

@@ -9,6 +9,7 @@
  * - tempo://network - Network configuration and status
  * - tempo://account/{address} - Account info and token balances
  * - tempo://token/{address} - TIP-20 token metadata
+ * - tempo://token/{address}/roles - TIP-20 token role assignments
  * - tempo://tx/{hash} - Transaction details
  * - tempo://block/{identifier} - Block information (number or "latest")
  */
@@ -19,6 +20,7 @@ import { getBalanceService } from '../services/balance-service.js';
 import { getTokenService } from '../services/token-service.js';
 import { getTransactionService } from '../services/transaction-service.js';
 import { getTempoClient } from '../services/tempo-client.js';
+import { getRoleService } from '../services/role-service.js';
 import { normalizeError } from '../utils/errors.js';
 import { getConfig } from '../config/index.js';
 import type { Address, Hash } from 'viem';
@@ -182,6 +184,32 @@ export function registerAllResources(): void {
         const tokenInfo = await tokenService.getTokenInfo(address);
 
         return createSuccessResponse(uri, tokenInfo);
+      } catch (error) {
+        return createErrorResponse(uri, error);
+      }
+    }
+  );
+
+  // ===========================================================================
+  // Dynamic Resource: Token Role Assignments
+  // ===========================================================================
+  server.registerResource(
+    'token-roles',
+    new ResourceTemplate('tempo://token/{address}/roles', { list: undefined }),
+    {
+      title: 'Token Role Assignments',
+      description:
+        'TIP-20 token role-based access control (RBAC) information including all role assignments and pause status',
+      mimeType: 'application/json',
+    },
+    async (uri, params) => {
+      const address = params.address as Address;
+
+      try {
+        const roleService = getRoleService();
+        const rolesInfo = await roleService.getTokenRolesInfo(address);
+
+        return createSuccessResponse(uri, rolesInfo);
       } catch (error) {
         return createErrorResponse(uri, error);
       }

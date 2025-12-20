@@ -38,6 +38,9 @@ Then ask Claude: *"What's my AlphaUSD balance?"*
 | "Process payroll from employees.csv" | Batch payments to multiple recipients |
 | "Swap 1000 AlphaUSD to BetaUSD" | Exchange stablecoins on Tempo DEX |
 | "Schedule payment of $200 to 0x... for tomorrow 9am" | Future-dated payment |
+| "Who has the ISSUER_ROLE on AlphaUSD?" | Query token role members |
+| "Grant PAUSE_ROLE to 0x..." | Assign role to address (requires admin) |
+| "Pause the AlphaUSD token" | Emergency pause all transfers |
 
 ---
 
@@ -79,6 +82,8 @@ AI agents are evolving from assistants into autonomous actors that can take real
 - **Token Creation** — Deploy new TIP-20 tokens via factory contract
 - **Mint/Burn** — Token supply management (requires ISSUER_ROLE)
 - **Swap** — Exchange stablecoins on Tempo's native DEX
+- **Role Management** — Grant, revoke, and query TIP-20 roles (admin, issuer, pause, unpause)
+- **Pause Control** — Emergency pause/unpause token transfers (requires PAUSE_ROLE/UNPAUSE_ROLE)
 
 ### Security
 - **Spending Limits** — Per-token and daily USD limits
@@ -244,6 +249,13 @@ const result = await client.callTool({
 | `get_token_info` | Get token metadata | `token` |
 | `mint_tokens` | Mint tokens (requires role) | `token`, `to`, `amount` |
 | `burn_tokens` | Burn tokens (requires role) | `token`, `amount` |
+| `grant_role` | Grant a role to an address | `token`, `role`, `account` |
+| `revoke_role` | Revoke a role from an address | `token`, `role`, `account` |
+| `renounce_role` | Renounce your own role | `token`, `role` |
+| `has_role` | Check if address has role | `token`, `role`, `account` |
+| `get_role_members` | List all members of a role | `token`, `role` |
+| `pause_token` | Pause all token transfers | `token`, `reason?` |
+| `unpause_token` | Resume token transfers | `token`, `reason?` |
 
 ### Exchange Tools
 
@@ -263,6 +275,7 @@ Resources provide read-only access to blockchain data via URI patterns:
 | `tempo://network` | Network configuration and current block |
 | `tempo://account/{address}` | Account info and token balances |
 | `tempo://token/{address}` | TIP-20 token metadata |
+| `tempo://token/{address}/roles` | Token role assignments and pause status |
 | `tempo://tx/{hash}` | Transaction details |
 | `tempo://block/{number\|"latest"}` | Block information |
 
@@ -283,6 +296,7 @@ Prompts provide reusable conversation templates:
 | `reconciliation-report` | Match transactions to invoices | `startDate`, `endDate`, `memoPrefix?` |
 | `payroll-summary` | Summarize batch payment results | `batchTransactionHash` |
 | `spending-report` | Analyze spending by recipient | `period`, `groupBy?` |
+| `role-audit` | Audit token role assignments | `token` |
 
 ---
 

@@ -10,6 +10,7 @@
  * - reconciliation-report: Match transactions to invoices
  * - payroll-summary: Summarize batch payment results
  * - spending-report: Analyze spending by category/recipient
+ * - role-audit: Audit TIP-20 token role assignments
  *
  */
 
@@ -207,6 +208,74 @@ The report should analyze:
 
 Include charts/visualizations descriptions where helpful.
 Format as a comprehensive spending report in markdown.`,
+          },
+        },
+      ],
+    })
+  );
+
+  // Role audit prompt
+  server.registerPrompt(
+    'role-audit',
+    {
+      title: 'Role Audit Report',
+      description:
+        'Generate a comprehensive audit report of TIP-20 token role assignments for security review',
+      argsSchema: {
+        token: z
+          .string()
+          .describe('TIP-20 token address to audit'),
+        format: z
+          .enum(['markdown', 'json'])
+          .optional()
+          .default('markdown')
+          .describe('Output format for the report'),
+      },
+    },
+    ({ token, format }) => ({
+      messages: [
+        {
+          role: 'user' as const,
+          content: {
+            type: 'text' as const,
+            text: `Generate a ${format ?? 'markdown'} formatted role audit report for TIP-20 token at address ${token}.
+
+First, use the tempo://token/${token}/roles resource or the get_role_members tool to fetch current role assignments.
+
+The report should include:
+
+## 1. Token Overview
+- Token address and explorer link
+- Token name and symbol (if available)
+- Current pause status
+- Report generation timestamp
+
+## 2. Role Assignments
+
+For each role (DEFAULT_ADMIN_ROLE, ISSUER_ROLE, PAUSE_ROLE, UNPAUSE_ROLE, BURN_BLOCKED_ROLE):
+- List all addresses that have the role
+- Count of role holders
+- Whether the role is critical (admin, issuer, pause roles are critical)
+
+Format as a table:
+| Role | Members | Count | Risk Level |
+
+## 3. Security Analysis
+
+Analyze the role configuration and identify:
+- Whether there's a backup admin (multiple DEFAULT_ADMIN_ROLE holders)
+- Whether PAUSE_ROLE and UNPAUSE_ROLE are properly assigned for emergency response
+- Any roles with no members assigned (potential governance gaps)
+- Whether the same address holds multiple critical roles (concentration risk)
+
+## 4. Recommendations
+
+Provide actionable security recommendations based on the analysis:
+- Suggest adding backup admins if only one exists
+- Recommend separation of duties if roles are concentrated
+- Identify any missing role assignments for operational safety
+
+${format === 'json' ? 'Return as a structured JSON object with sections for overview, roles, analysis, and recommendations.' : 'Format as a professional audit report in markdown with proper headers and tables.'}`,
           },
         },
       ],
