@@ -21,6 +21,7 @@ import { getTokenService } from '../services/token-service.js';
 import { getTransactionService } from '../services/transaction-service.js';
 import { getTempoClient } from '../services/tempo-client.js';
 import { getRoleService } from '../services/role-service.js';
+import { getPolicyService } from '../services/policy-service.js';
 import { normalizeError } from '../utils/errors.js';
 import { getConfig } from '../config/index.js';
 import type { Address, Hash } from 'viem';
@@ -291,6 +292,129 @@ export function registerAllResources(): void {
         };
 
         return createSuccessResponse(uri, blockData);
+      } catch (error) {
+        return createErrorResponse(uri, error);
+      }
+    }
+  );
+
+  // ===========================================================================
+  // Dynamic Resource: Policy Information
+  // ===========================================================================
+  server.registerResource(
+    'policy',
+    new ResourceTemplate('tempo://policy/{id}', { list: undefined }),
+    {
+      title: 'Policy Information',
+      description:
+        'TIP-403 policy details including type (whitelist/blacklist), owner, and token count',
+      mimeType: 'application/json',
+    },
+    async (uri, params) => {
+      const policyIdStr = params.id as string;
+      const policyId = parseInt(policyIdStr, 10);
+
+      if (isNaN(policyId) || policyId < 1) {
+        return createErrorResponse(uri, new Error(`Invalid policy ID: ${policyIdStr}`));
+      }
+
+      try {
+        const policyService = getPolicyService();
+        const policyInfo = await policyService.getPolicy(policyId);
+
+        const policyData = {
+          policyId: policyInfo.policyId,
+          policyType: policyInfo.policyType,
+          policyTypeDescription:
+            policyInfo.policyType === 'whitelist'
+              ? 'Only whitelisted addresses can send/receive tokens'
+              : policyInfo.policyType === 'blacklist'
+                ? 'All addresses can transact except blacklisted ones'
+                : 'No transfer restrictions',
+          owner: policyInfo.owner,
+          tokenCount: policyInfo.tokenCount,
+          registryAddress: '0x403c000000000000000000000000000000000000',
+        };
+
+        return createSuccessResponse(uri, policyData);
+      } catch (error) {
+        return createErrorResponse(uri, error);
+      }
+    }
+  );
+
+  // ===========================================================================
+  // Dynamic Resource: Policy Whitelist Status Check
+  // ===========================================================================
+  server.registerResource(
+    'policy-whitelist-check',
+    new ResourceTemplate('tempo://policy/{id}/whitelist/{address}', { list: undefined }),
+    {
+      title: 'Policy Whitelist Check',
+      description:
+        'Check if an address is whitelisted in a TIP-403 policy',
+      mimeType: 'application/json',
+    },
+    async (uri, params) => {
+      const policyIdStr = params.id as string;
+      const policyId = parseInt(policyIdStr, 10);
+      const address = params.address as Address;
+
+      if (isNaN(policyId) || policyId < 1) {
+        return createErrorResponse(uri, new Error(`Invalid policy ID: ${policyIdStr}`));
+      }
+
+      try {
+        const policyService = getPolicyService();
+        const isWhitelisted = await policyService.isWhitelisted(policyId, address);
+
+        const statusData = {
+          policyId,
+          address,
+          isWhitelisted,
+          checkedAt: new Date().toISOString(),
+        };
+
+        return createSuccessResponse(uri, statusData);
+      } catch (error) {
+        return createErrorResponse(uri, error);
+      }
+    }
+  );
+
+  // ===========================================================================
+  // Dynamic Resource: Policy Blacklist Status Check
+  // ===========================================================================
+  server.registerResource(
+    'policy-blacklist-check',
+    new ResourceTemplate('tempo://policy/{id}/blacklist/{address}', { list: undefined }),
+    {
+      title: 'Policy Blacklist Check',
+      description:
+        'Check if an address is blacklisted in a TIP-403 policy',
+      mimeType: 'application/json',
+    },
+    async (uri, params) => {
+      const policyIdStr = params.id as string;
+      const policyId = parseInt(policyIdStr, 10);
+      const address = params.address as Address;
+
+      if (isNaN(policyId) || policyId < 1) {
+        return createErrorResponse(uri, new Error(`Invalid policy ID: ${policyIdStr}`));
+      }
+
+      try {
+        const policyService = getPolicyService();
+        const isBlacklisted = await policyService.isBlacklisted(policyId, address);
+
+        const statusData = {
+          policyId,
+          address,
+          isBlacklisted,
+          checkedAt: new Date().toISOString(),
+        };
+
+        return createSuccessResponse(uri, statusData);
       } catch (error) {
         return createErrorResponse(uri, error);
       }

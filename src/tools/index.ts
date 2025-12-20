@@ -11,6 +11,7 @@
  * - exchange: Stablecoin swaps via native DEX
  * - account: Balance queries, transaction history, account info
  * - roles: TIP-20 role management (grant, revoke, pause, unpause)
+ * - policy: TIP-403 compliance (whitelist, blacklist, transfer validation)
  */
 
 import { registerPaymentTools } from './payments/index.js';
@@ -18,6 +19,7 @@ import { registerTokenTools } from './tokens/index.js';
 import { registerExchangeTools } from './exchange/index.js';
 import { registerAccountTools } from './account/index.js';
 import { registerRoleTools } from './roles/index.js';
+import { registerPolicyTools } from './policy/index.js';
 
 /**
  * Register all MCP tools with the server.
@@ -32,4 +34,5 @@ export function registerAllTools(): void {
   registerExchangeTools();
   registerAccountTools();
   registerRoleTools();
+  registerPolicyTools();
 }
