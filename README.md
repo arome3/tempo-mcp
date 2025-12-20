@@ -44,6 +44,8 @@ Then ask Claude: *"What's my AlphaUSD balance?"*
 | "Is 0x... whitelisted in policy 1?" | Check address compliance status |
 | "Add 0x... to the whitelist" | Whitelist address (requires policy owner) |
 | "Can 0x... transfer to 0x...?" | Pre-validate transfer compliance |
+| "Send 100 AlphaUSD to 0x... with sponsored gas" | Gasless payment (fee paid by sponsor) |
+| "What's the sponsor's balance?" | Check fee sponsor token balance |
 
 ---
 
@@ -76,6 +78,7 @@ AI agents are evolving from assistants into autonomous actors that can take real
 - **Single Payments** — Send TIP-20 stablecoin transfers with optional memos
 - **Batch Payments** — Atomic multi-recipient transfers (up to 100 recipients)
 - **Scheduled Payments** — Protocol-level future payments with execution windows
+- **Sponsored Payments** — Gasless transactions where a sponsor pays fees (local key or relay service)
 
 ### Query Operations
 - **Balance Queries** — Check single or multiple token balances
@@ -235,6 +238,9 @@ const result = await client.callTool({
 | `batch_payments` | Atomic multi-recipient transfer | `token`, `payments[]` (max 100) |
 | `schedule_payment` | Create a scheduled future payment | `token`, `to`, `amount`, `executeAt` |
 | `cancel_scheduled_payment` | Cancel a pending scheduled payment | `transactionHash` |
+| `send_sponsored_payment` | Gasless payment (sponsor pays fees) | `token`, `to`, `amount`, `useRelay?` |
+| `estimate_sponsored_gas` | Estimate gas for sponsored tx | `token`, `to`, `amount`, `feeToken?` |
+| `get_sponsor_balance` | Check sponsor's token balance | `sponsor?`, `token?` |
 
 ### Query Tools (Low Risk)
 
@@ -346,6 +352,12 @@ Prompts provide reusable conversation templates:
 | `TEMPO_LOG_LEVEL` | Log level (debug/info/warn/error) | `info` |
 | `TEMPO_AUDIT_LOG_ENABLED` | Enable audit logging | `true` |
 | `TEMPO_AUDIT_LOG_PATH` | Audit log file path | `./logs/audit.jsonl` |
+| **Fee Sponsorship** | | |
+| `TEMPO_FEE_SPONSORSHIP_ENABLED` | Enable gasless transactions | `false` |
+| `TEMPO_FEE_PAYER_TYPE` | Sponsor mode (`local` or `relay`) | `local` |
+| `TEMPO_FEE_PAYER_ADDRESS` | Fee payer wallet address | — |
+| `TEMPO_FEE_PAYER_KEY` | Fee payer private key (local mode) | — |
+| `TEMPO_FEE_RELAY_URL` | Relay service URL | `https://sponsor.testnet.tempo.xyz` |
 | **Tokens** | | |
 | `TEMPO_DEFAULT_TOKEN` | Default payment token | `AlphaUSD` |
 
@@ -395,6 +407,15 @@ logging:
     enabled: true
     path: ./logs/audit.jsonl
     rotationDays: 30
+
+feeSponsorship:
+  enabled: true
+  feePayer:
+    type: local              # or 'relay' for testnet relay service
+    address: "0x..."         # Fee payer wallet address
+    privateKey: "0x..."      # Fee payer private key (local mode only)
+    relayUrl: "https://sponsor.testnet.tempo.xyz"  # Relay endpoint
+  maxSponsoredPerDay: "1000" # Daily sponsorship limit
 ```
 
 ### Configuration Priority
@@ -509,6 +530,26 @@ User: "Process this month's payroll from employees.csv"
       { to: "0x...", amount: "6000", label: "Carol" }
     ]
   })
+```
+
+### Sponsored (Gasless) Payment
+
+```
+User: "Send 100 AlphaUSD to 0x... using sponsored gas"
+
+→ Claude calls send_sponsored_payment({
+    token: "AlphaUSD",
+    to: "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEbb",
+    amount: "100",
+    useRelay: false  // Use local fee payer
+  })
+
+→ Returns: {
+    success: true,
+    transactionHash: "0xdef456...",
+    feePayer: "0xabc...",
+    feeAmount: "0.000073"
+  }
 ```
 
 ### Example Agents

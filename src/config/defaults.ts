@@ -98,4 +98,14 @@ export const defaultConfig: TempoMcpConfig = {
     confirmations: 1, // Wait for 1 block confirmation
     timeout: 30000, // 30 second transaction timeout
   },
+
+  feeSponsorship: {
+    enabled: false, // Disabled by default
+    feePayer: {
+      type: 'local',
+      // address and privateKey must be provided by user for local type
+      relayUrl: 'https://sponsor.testnet.tempo.xyz',
+    },
+    maxSponsoredPerDay: '1000', // Max $1000 sponsored per day
+  },
 };
