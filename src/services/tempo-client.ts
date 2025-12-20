@@ -247,6 +247,20 @@ export interface ScheduledTransactionParams {
   value?: bigint;
 }
 
+/** Concurrent transaction parameters for parallel execution */
+export interface ConcurrentTransactionParams {
+  /** Target contract address */
+  to: Address;
+  /** Encoded function call data */
+  data: `0x${string}`;
+  /** Optional value to send (usually 0 for TIP-20) */
+  value?: bigint;
+  /** Explicit nonce within the key sequence */
+  nonce: number;
+  /** Parallel execution channel (0-255) */
+  nonceKey: number;
+}
+
 // =============================================================================
 // TempoClient Class
 // =============================================================================
@@ -595,6 +609,65 @@ export class TempoClient {
       scheduledAt: params.scheduledAt,
       validFrom: params.validFrom,
       validUntil: params.validUntil,
+      feeToken: this.feeToken,
+    } as Parameters<typeof this.walletClient.sendTransaction>[0]);
+
+    return hash;
+  }
+
+  /**
+   * Send a concurrent transaction using a specific nonce key.
+   *
+   * Tempo's nonceKey parameter enables parallel transaction execution by
+   * maintaining up to 256 independent nonce sequences. This allows multiple
+   * transactions from the same account to be submitted and confirmed
+   * simultaneously without waiting for sequential confirmation.
+   *
+   * @param params - Concurrent transaction parameters including nonceKey
+   * @returns Transaction hash
+   * @throws Error if wallet is not configured or nonceKey is out of range
+   *
+   * @example
+   * ```typescript
+   * // Send transactions on different nonce keys in parallel
+   * const hash1 = await client.sendConcurrentTransaction({
+   *   to: tokenAddress,
+   *   data: transferData1,
+   *   nonce: 0n,
+   *   nonceKey: 1,  // First parallel channel
+   * });
+   * const hash2 = await client.sendConcurrentTransaction({
+   *   to: tokenAddress,
+   *   data: transferData2,
+   *   nonce: 0n,
+   *   nonceKey: 2,  // Second parallel channel
+   * });
+   * // Both transactions execute in parallel!
+   * ```
+   */
+  async sendConcurrentTransaction(
+    params: ConcurrentTransactionParams
+  ): Promise<Hash> {
+    if (!this.walletClient) {
+      throw InternalError.walletNotConfigured();
+    }
+
+    // Validate nonceKey range (0-255)
+    if (params.nonceKey < 0 || params.nonceKey > 255) {
+      throw ValidationError.custom(
+        'nonceKey',
+        'Nonce key must be between 0 and 255',
+        String(params.nonceKey)
+      );
+    }
+
+    // tempo.ts extends viem with nonceKey support for TempoTransaction (0x76)
+    const hash = await this.walletClient.sendTransaction({
+      to: params.to,
+      data: params.data,
+      value: params.value ?? BigInt(0),
+      nonce: params.nonce,
+      nonceKey: params.nonceKey, // Tempo-specific: parallel execution channel
       feeToken: this.feeToken,
     } as Parameters<typeof this.walletClient.sendTransaction>[0]);
 
