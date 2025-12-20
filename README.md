@@ -41,6 +41,9 @@ Then ask Claude: *"What's my AlphaUSD balance?"*
 | "Who has the ISSUER_ROLE on AlphaUSD?" | Query token role members |
 | "Grant PAUSE_ROLE to 0x..." | Assign role to address (requires admin) |
 | "Pause the AlphaUSD token" | Emergency pause all transfers |
+| "Is 0x... whitelisted in policy 1?" | Check address compliance status |
+| "Add 0x... to the whitelist" | Whitelist address (requires policy owner) |
+| "Can 0x... transfer to 0x...?" | Pre-validate transfer compliance |
 
 ---
 
@@ -63,6 +66,7 @@ AI agents are evolving from assistants into autonomous actors that can take real
 - **Invoice Settlement**: Match payments to invoices using memo fields
 - **Treasury Management**: Rebalance multi-token portfolios automatically
 - **Micropayments**: Enable pay-per-use AI services
+- **Compliance Management**: Automate KYC/AML whitelist maintenance and transfer validation
 
 ---
 
@@ -84,6 +88,7 @@ AI agents are evolving from assistants into autonomous actors that can take real
 - **Swap** — Exchange stablecoins on Tempo's native DEX
 - **Role Management** — Grant, revoke, and query TIP-20 roles (admin, issuer, pause, unpause)
 - **Pause Control** — Emergency pause/unpause token transfers (requires PAUSE_ROLE/UNPAUSE_ROLE)
+- **Policy Compliance** — TIP-403 whitelist/blacklist management and pre-transfer validation
 
 ### Security
 - **Spending Limits** — Per-token and daily USD limits
@@ -257,6 +262,20 @@ const result = await client.callTool({
 | `pause_token` | Pause all token transfers | `token`, `reason?` |
 | `unpause_token` | Resume token transfers | `token`, `reason?` |
 
+### Policy Tools (TIP-403 Compliance)
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `check_transfer_compliance` | Pre-validate if transfer is allowed | `token`, `from`, `to` |
+| `get_policy_info` | Get policy details | `policyId` |
+| `is_whitelisted` | Check if address is whitelisted | `policyId`, `account` |
+| `is_blacklisted` | Check if address is blacklisted | `policyId`, `account` |
+| `add_to_whitelist` | Add address to whitelist | `policyId`, `account` |
+| `remove_from_whitelist` | Remove from whitelist | `policyId`, `account` |
+| `add_to_blacklist` | Block an address | `policyId`, `account` |
+| `remove_from_blacklist` | Unblock an address | `policyId`, `account` |
+| `burn_blocked_tokens` | Burn tokens from blocked address | `token`, `blockedAddress`, `amount` |
+
 ### Exchange Tools
 
 | Tool | Description | Key Parameters |
@@ -278,6 +297,9 @@ Resources provide read-only access to blockchain data via URI patterns:
 | `tempo://token/{address}/roles` | Token role assignments and pause status |
 | `tempo://tx/{hash}` | Transaction details |
 | `tempo://block/{number\|"latest"}` | Block information |
+| `tempo://policy/{id}` | TIP-403 policy details (type, owner, token count) |
+| `tempo://policy/{id}/whitelist/{address}` | Check if address is whitelisted |
+| `tempo://policy/{id}/blacklist/{address}` | Check if address is blacklisted |
 
 **Example Usage:**
 ```
@@ -297,6 +319,7 @@ Prompts provide reusable conversation templates:
 | `payroll-summary` | Summarize batch payment results | `batchTransactionHash` |
 | `spending-report` | Analyze spending by recipient | `period`, `groupBy?` |
 | `role-audit` | Audit token role assignments | `token` |
+| `compliance-report` | Generate TIP-403 compliance status report | `addresses`, `policyId?`, `token?` |
 
 ---
 
@@ -498,6 +521,7 @@ Explore complete agent implementations in the `/examples` directory:
 | [Payroll Agent](./examples/payroll-agent/) | CSV-based batch payroll processing |
 | [Invoice Agent](./examples/invoice-agent/) | AP automation with memo reconciliation |
 | [Treasury Agent](./examples/treasury-agent/) | Multi-token portfolio management |
+| [Compliance Agent](./examples/compliance-agent/) | TIP-403 whitelist/blacklist management |
 
 ---
 

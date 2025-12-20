@@ -11,6 +11,7 @@
  * - payroll-summary: Summarize batch payment results
  * - spending-report: Analyze spending by category/recipient
  * - role-audit: Audit TIP-20 token role assignments
+ * - compliance-report: Generate TIP-403 compliance status report
  *
  */
 
@@ -276,6 +277,110 @@ Provide actionable security recommendations based on the analysis:
 - Identify any missing role assignments for operational safety
 
 ${format === 'json' ? 'Return as a structured JSON object with sections for overview, roles, analysis, and recommendations.' : 'Format as a professional audit report in markdown with proper headers and tables.'}`,
+          },
+        },
+      ],
+    })
+  );
+
+  // Compliance report prompt (TIP-403 Policy Registry)
+  server.registerPrompt(
+    'compliance-report',
+    {
+      title: 'Compliance Status Report',
+      description:
+        'Generate a TIP-403 compliance status report for addresses, checking their whitelist/blacklist status across policies',
+      argsSchema: {
+        addresses: z
+          .string()
+          .describe(
+            'Comma-separated list of addresses to check compliance status for'
+          ),
+        policyId: z
+          .number()
+          .optional()
+          .describe(
+            'Specific policy ID to check against. If not provided, uses the default policy or checks all relevant policies'
+          ),
+        token: z
+          .string()
+          .optional()
+          .describe(
+            'Token address to check policy compliance for (used to find associated policy)'
+          ),
+        format: z
+          .enum(['markdown', 'json'])
+          .optional()
+          .default('markdown')
+          .describe('Output format for the report'),
+      },
+    },
+    ({ addresses, policyId, token, format }) => ({
+      messages: [
+        {
+          role: 'user' as const,
+          content: {
+            type: 'text' as const,
+            text: `Generate a ${format ?? 'markdown'} formatted TIP-403 compliance status report.
+
+## Addresses to Check
+${addresses}
+
+## Policy Context
+${policyId ? `Policy ID: ${policyId}` : token ? `Token: ${token} (find associated policy)` : 'Check against all relevant policies or use default policy'}
+
+## Instructions
+
+1. First, determine the policy context:
+   ${policyId ? `- Use the tempo://policy/${policyId} resource or get_policy_info tool to get policy details` : token ? `- Use check_transfer_compliance or get the policy ID associated with token ${token}` : '- Identify the relevant policy or policies to check'}
+
+2. For each address in the list, check:
+   - Use is_whitelisted tool to check whitelist status
+   - Use is_blacklisted tool to check blacklist status
+   - Or use tempo://policy/{id}/whitelist/{address} and tempo://policy/{id}/blacklist/{address} resources
+
+3. Generate the report with the following sections:
+
+## 1. Policy Overview
+- Policy ID and type (whitelist/blacklist/none)
+- Policy owner address
+- Number of tokens using this policy
+- Policy type description and implications
+
+## 2. Address Compliance Status
+
+Create a table for each address:
+| Address | Whitelisted | Blacklisted | Status | Notes |
+
+Where Status is:
+- ✅ COMPLIANT: Can send/receive tokens under this policy
+- ❌ BLOCKED: Cannot transact (blacklisted or not whitelisted in whitelist policy)
+- ⚠️ RESTRICTED: Partial compliance (e.g., can receive but not send)
+
+## 3. Transfer Matrix (if multiple addresses)
+
+If checking multiple addresses, show which pairs can transfer to each other:
+| From \\ To | Addr1 | Addr2 | Addr3 |
+|-----------|-------|-------|-------|
+| Addr1     | -     | ✅/❌  | ✅/❌  |
+
+Use check_transfer_compliance for each pair.
+
+## 4. Compliance Summary
+
+- Total addresses checked
+- Count of compliant addresses
+- Count of blocked addresses
+- Any addresses requiring attention
+
+## 5. Recommendations
+
+Based on the compliance status:
+- Suggest adding addresses to whitelist if needed for operations
+- Identify any blocked addresses that may need review
+- Recommend actions for compliance gaps
+
+${format === 'json' ? 'Return as a structured JSON object with sections for policy, addressStatuses (array), transferMatrix (if applicable), summary, and recommendations.' : 'Format as a professional compliance report in markdown with proper headers, tables, and status indicators.'}`,
           },
         },
       ],

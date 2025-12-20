@@ -405,3 +405,167 @@ export interface TokenRolesInfo {
     };
   };
 }
+
+// =============================================================================
+// Policy Management Types (TIP-403)
+// =============================================================================
+
+/**
+ * TIP-403 policy types for transfer restrictions.
+ */
+export type PolicyType = 'whitelist' | 'blacklist' | 'none';
+
+export interface CheckTransferComplianceInput {
+  token: string;
+  from: string;
+  to: string;
+}
+
+export interface CheckTransferComplianceResult {
+  allowed: boolean;
+  policyId: number | null;
+  policyType: PolicyType;
+  fromStatus: {
+    isWhitelisted: boolean;
+    isBlacklisted: boolean;
+  };
+  toStatus: {
+    isWhitelisted: boolean;
+    isBlacklisted: boolean;
+  };
+  reason: string | null;
+  token: string;
+  from: string;
+  to: string;
+}
+
+export interface GetPolicyInfoInput {
+  policyId: number;
+}
+
+export interface GetPolicyInfoResult {
+  policyId: number;
+  policyType: PolicyType;
+  policyTypeDescription: string;
+  owner: string;
+  tokenCount: number;
+}
+
+export interface IsWhitelistedInput {
+  policyId: number;
+  account: string;
+}
+
+export interface IsWhitelistedResult {
+  isWhitelisted: boolean;
+  policyId: number;
+  account: string;
+}
+
+export interface IsBlacklistedInput {
+  policyId: number;
+  account: string;
+}
+
+export interface IsBlacklistedResult {
+  isBlacklisted: boolean;
+  policyId: number;
+  account: string;
+}
+
+export interface AddToWhitelistInput {
+  policyId: number;
+  account: string;
+}
+
+export interface AddToWhitelistResult {
+  success: boolean;
+  transactionHash?: string;
+  blockNumber?: number;
+  policyId?: number;
+  account?: string;
+  action?: 'whitelisted';
+  addedBy?: string;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
+export interface RemoveFromWhitelistInput {
+  policyId: number;
+  account: string;
+}
+
+export interface RemoveFromWhitelistResult {
+  success: boolean;
+  transactionHash?: string;
+  blockNumber?: number;
+  policyId?: number;
+  account?: string;
+  action?: 'removed_from_whitelist';
+  removedBy?: string;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
+export interface AddToBlacklistInput {
+  policyId: number;
+  account: string;
+}
+
+export interface AddToBlacklistResult {
+  success: boolean;
+  transactionHash?: string;
+  blockNumber?: number;
+  policyId?: number;
+  account?: string;
+  action?: 'blacklisted';
+  blockedBy?: string;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
+export interface RemoveFromBlacklistInput {
+  policyId: number;
+  account: string;
+}
+
+export interface RemoveFromBlacklistResult {
+  success: boolean;
+  transactionHash?: string;
+  blockNumber?: number;
+  policyId?: number;
+  account?: string;
+  action?: 'removed_from_blacklist';
+  unblockedBy?: string;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
+export interface BurnBlockedTokensInput {
+  token: string;
+  blockedAddress: string;
+  amount: string;
+}
+
+export interface BurnBlockedTokensResult {
+  success: boolean;
+  transactionHash?: string;
+  blockNumber?: number;
+  token?: string;
+  blockedAddress?: string;
+  amountBurned?: string;
+  amountBurnedFormatted?: string;
+  burnedBy?: string;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
