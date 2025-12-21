@@ -24,6 +24,7 @@ import { registerRoleTools } from './roles/index.js';
 import { registerPolicyTools } from './policy/index.js';
 import { registerSponsorshipTools } from './sponsorship/index.js';
 import { registerConcurrentTools } from './concurrent/index.js';
+import { registerAccessKeyTools } from './access-keys/index.js';
 
 /**
  * Register all MCP tools with the server.
@@ -41,4 +42,5 @@ export function registerAllTools(): void {
   registerPolicyTools();
   registerSponsorshipTools();
   registerConcurrentTools();
+  registerAccessKeyTools();
 }

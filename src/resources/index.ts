@@ -420,4 +420,61 @@ export function registerAllResources(): void {
       }
     }
   );
+
+  // ===========================================================================
+  // Dynamic Resource: Access Key Information
+  // ===========================================================================
+  server.registerResource(
+    'access-key',
+    new ResourceTemplate('tempo://access-key/{account}/{keyId}', { list: undefined }),
+    {
+      title: 'Access Key Info',
+      description:
+        'Access key details including signature type, expiry, spending limits enforcement, and revocation status',
+      mimeType: 'application/json',
+    },
+    async (uri, params) => {
+      const account = params.account as Address;
+      const keyId = params.keyId as Address;
+
+      try {
+        const { getAccessKeyService, SIGNATURE_TYPE_NAMES } = await import(
+          '../services/access-key-service.js'
+        );
+        const accessKeyService = getAccessKeyService();
+        const keyInfo = await accessKeyService.getKeyInfo(account, keyId);
+
+        if (!keyInfo) {
+          return createSuccessResponse(uri, {
+            found: false,
+            account,
+            keyId,
+            message: 'Access key not found or not authorized for this account',
+          });
+        }
+
+        const now = Math.floor(Date.now() / 1000);
+        const isExpired = keyInfo.expiry !== 0 && keyInfo.expiry <= now;
+        const isActive = !keyInfo.isRevoked && !isExpired;
+
+        const keyData = {
+          found: true,
+          account,
+          keyId: keyInfo.keyId,
+          signatureType: SIGNATURE_TYPE_NAMES[keyInfo.signatureType],
+          expiry: keyInfo.expiry,
+          expiryISO: keyInfo.expiry !== 0 ? new Date(keyInfo.expiry * 1000).toISOString() : null,
+          isExpired,
+          enforceLimits: keyInfo.enforceLimits,
+          isRevoked: keyInfo.isRevoked,
+          isActive,
+          checkedAt: new Date().toISOString(),
+        };
+
+        return createSuccessResponse(uri, keyData);
+      } catch (error) {
+        return createErrorResponse(uri, error);
+      }
+    }
+  );
 }
