@@ -627,3 +627,83 @@ export interface SponsorBalanceResult {
   token: string;
   tokenSymbol: string;
 }
+
+// =============================================================================
+// Access Key Types (Session Keys)
+// =============================================================================
+
+/**
+ * Signature types supported by Tempo access keys.
+ */
+export type SignatureTypeName = 'secp256k1' | 'p256' | 'webauthn';
+
+export interface GetAccessKeyInfoInput {
+  keyId: string;
+  account?: string;
+}
+
+export interface GetAccessKeyInfoResult {
+  found: boolean;
+  keyId: string;
+  account: string;
+  signatureType: SignatureTypeName | null;
+  signatureTypeDescription: string | null;
+  expiry: number | null;
+  expiryISO: string | null;
+  isExpired: boolean | null;
+  enforceLimits: boolean | null;
+  isRevoked: boolean | null;
+  isActive: boolean;
+}
+
+export interface GetRemainingLimitInput {
+  keyId: string;
+  token: string;
+  account?: string;
+}
+
+export interface GetRemainingLimitResult {
+  keyId: string;
+  account: string;
+  token: string;
+  remainingLimit: string;
+  remainingLimitFormatted: string;
+  isUnlimited: boolean;
+}
+
+export interface RevokeAccessKeyInput {
+  keyId: string;
+}
+
+export interface RevokeAccessKeyResult {
+  success: boolean;
+  transactionHash?: string;
+  blockNumber?: number;
+  keyId?: string;
+  revokedBy?: string;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
+export interface UpdateSpendingLimitInput {
+  keyId: string;
+  token: string;
+  newLimit: string;
+}
+
+export interface UpdateSpendingLimitResult {
+  success: boolean;
+  transactionHash?: string;
+  blockNumber?: number;
+  keyId?: string;
+  token?: string;
+  newLimit?: string;
+  newLimitFormatted?: string;
+  updatedBy?: string;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}

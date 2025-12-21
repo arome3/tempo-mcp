@@ -47,6 +47,9 @@ Then ask Claude: *"What's my AlphaUSD balance?"*
 | "Can 0x... transfer to 0x...?" | Pre-validate transfer compliance |
 | "Send 100 AlphaUSD to 0x... with sponsored gas" | Gasless payment (fee paid by sponsor) |
 | "What's the sponsor's balance?" | Check fee sponsor token balance |
+| "Get access key info for 0x..." | Query session key details and status |
+| "Check remaining limit for access key 0x..." | View spending allowance left |
+| "Revoke access key 0x..." | Permanently disable a session key |
 
 ---
 
@@ -70,6 +73,7 @@ AI agents are evolving from assistants into autonomous actors that can take real
 - **Treasury Management**: Rebalance multi-token portfolios automatically
 - **Micropayments**: Enable pay-per-use AI services
 - **Compliance Management**: Automate KYC/AML whitelist maintenance and transfer validation
+- **Delegated Agent Signing**: Use access keys (session keys) for AI agents with spending limits
 
 ---
 
@@ -100,6 +104,7 @@ AI agents are evolving from assistants into autonomous actors that can take real
 - **Address Allowlist** — Whitelist or blocklist recipient addresses
 - **Rate Limiting** — Configurable limits per operation type
 - **Audit Logging** — Structured JSON logs with request tracing
+- **Access Keys (Session Keys)** — Delegated signing with per-token spending limits and expiration
 
 ### Wallet Support
 - **Private Key** — Direct key for development/testing
@@ -287,6 +292,15 @@ const result = await client.callTool({
 | `remove_from_blacklist` | Unblock an address | `policyId`, `account` |
 | `burn_blocked_tokens` | Burn tokens from blocked address | `token`, `blockedAddress`, `amount` |
 
+### Access Key Tools (Session Keys)
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `get_access_key_info` | Get access key details (type, expiry, limits) | `accountAddress`, `keyId` |
+| `get_remaining_limit` | Check remaining spending allowance | `accountAddress`, `keyId`, `token` |
+| `revoke_access_key` | Permanently disable an access key | `keyId` |
+| `update_spending_limit` | Modify token spending limit for a key | `keyId`, `token`, `newLimit` |
+
 ### Exchange Tools
 
 | Tool | Description | Key Parameters |
@@ -311,6 +325,8 @@ Resources provide read-only access to blockchain data via URI patterns:
 | `tempo://policy/{id}` | TIP-403 policy details (type, owner, token count) |
 | `tempo://policy/{id}/whitelist/{address}` | Check if address is whitelisted |
 | `tempo://policy/{id}/blacklist/{address}` | Check if address is blacklisted |
+| `tempo://access-key/{account}/{keyId}` | Access key info (type, expiry, revoked status) |
+| `tempo://access-key/{account}/{keyId}/limit/{token}` | Remaining spending limit for token |
 
 **Example Usage:**
 ```
