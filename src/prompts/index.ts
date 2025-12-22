@@ -12,6 +12,7 @@
  * - spending-report: Analyze spending by category/recipient
  * - role-audit: Audit TIP-20 token role assignments
  * - compliance-report: Generate TIP-403 compliance status report
+ * - rewards-summary: Analyze rewards status across held tokens
  *
  */
 
@@ -381,6 +382,100 @@ Based on the compliance status:
 - Recommend actions for compliance gaps
 
 ${format === 'json' ? 'Return as a structured JSON object with sections for policy, addressStatuses (array), transferMatrix (if applicable), summary, and recommendations.' : 'Format as a professional compliance report in markdown with proper headers, tables, and status indicators.'}`,
+          },
+        },
+      ],
+    })
+  );
+
+  // Rewards summary prompt
+  server.registerPrompt(
+    'rewards-summary',
+    {
+      title: 'Rewards Summary',
+      description:
+        'Analyze TIP-20 token rewards status across multiple tokens, showing opt-in status, pending rewards, and optimization recommendations',
+      argsSchema: {
+        tokens: z
+          .string()
+          .optional()
+          .describe(
+            'Comma-separated list of TIP-20 token addresses or aliases to analyze (e.g., "AlphaUSD,BetaUSD"). If not provided, analyzes all tokens in the wallet.'
+          ),
+        format: z
+          .enum(['markdown', 'json'])
+          .optional()
+          .default('markdown')
+          .describe('Output format for the report'),
+      },
+    },
+    ({ tokens, format }) => ({
+      messages: [
+        {
+          role: 'user' as const,
+          content: {
+            type: 'text' as const,
+            text: `Generate a ${format ?? 'markdown'} formatted TIP-20 rewards summary report.
+
+## Tokens to Analyze
+${tokens ? tokens : 'All tokens held in the wallet (use get_balances tool first)'}
+
+## Instructions
+
+1. For each token, use the get_reward_status tool or tempo://token/{address}/rewards resource to fetch:
+   - Opt-in status
+   - Pending rewards
+   - Opted-in balance vs total balance
+   - Reward recipient (if set)
+   - Total rewards claimed
+   - Share of the rewards pool
+
+2. Generate the report with the following sections:
+
+## 1. Portfolio Overview
+- Total tokens analyzed
+- Tokens with rewards opted in
+- Tokens with pending rewards
+- Total pending rewards value (if prices available)
+
+## 2. Token-by-Token Status
+
+Create a comprehensive table:
+| Token | Opted In | Pending | Balance | Participation | Pool Share | Recipient |
+|-------|----------|---------|---------|---------------|------------|-----------|
+
+Where:
+- Opted In: ✅ Yes / ❌ No
+- Pending: Formatted pending rewards amount
+- Balance: Opted-in balance / Total balance
+- Participation: Percentage of balance opted in
+- Pool Share: Percentage of total opted-in supply
+- Recipient: Custom recipient address or "Self"
+
+## 3. Rewards Analysis
+
+For each token:
+- Current APY estimate (if historical data available)
+- Projected rewards based on pool share
+- Comparison to other tokens
+
+## 4. Optimization Recommendations
+
+Provide actionable recommendations:
+- Tokens not opted in that could earn rewards
+- Tokens with low participation rates
+- Unclaimed rewards that should be harvested
+- Suboptimal reward recipient configurations
+- Pool concentration risks
+
+## 5. Action Items
+
+Generate a prioritized list of actions:
+1. "Opt into rewards for [Token] to start earning"
+2. "Claim [amount] pending rewards from [Token]"
+3. "Consider setting reward recipient for [Token]"
+
+${format === 'json' ? 'Return as a structured JSON object with sections for overview, tokenStatuses (array), analysis, recommendations (array), and actionItems (array).' : 'Format as a professional rewards report in markdown with proper headers, tables, and actionable insights.'}`,
           },
         },
       ],

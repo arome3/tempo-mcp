@@ -34,18 +34,34 @@ vi.mock('viem', async () => {
   return {
     ...actual,
     createClient: vi.fn(() => ({
-      extend: vi.fn(() => ({
-        request: vi.fn().mockImplementation(({ method }) => {
-          // Mock eth_getTransactionCount with nonceKey extension
-          if (method === 'eth_getTransactionCount') {
-            return Promise.resolve('0x0');
-          }
-          return Promise.reject(new Error(`Unknown method: ${method}`));
-        }),
-      })),
+      extend: vi.fn().mockImplementation(function (this: unknown) {
+        return {
+          extend: vi.fn().mockReturnThis(),
+          getTransactionCount: vi.fn().mockResolvedValue(0),
+          request: vi.fn().mockImplementation(({ method }) => {
+            if (method === 'eth_getTransactionCount') {
+              return Promise.resolve('0x0');
+            }
+            if (method === 'eth_call') {
+              return Promise.resolve('0x0000000000000000000000000000000000000000000000000000000000000000');
+            }
+            return Promise.reject(new Error(`Unknown method: ${method}`));
+          }),
+        };
+      }),
     })),
   };
 });
+
+// Mock tempo.ts/viem Actions to avoid real RPC calls
+vi.mock('tempo.ts/viem', () => ({
+  Actions: {
+    nonce: {
+      getNonce: async () => 0n,
+    },
+  },
+  tempoActions: () => (client: unknown) => client,
+}));
 
 // Mock the tempo client module
 vi.mock('../../src/services/tempo-client.js', async () => {

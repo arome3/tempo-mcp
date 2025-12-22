@@ -26,6 +26,7 @@ import {
   type PublicActions,
 } from 'viem';
 import { tempo } from 'tempo.ts/chains';
+import { Actions } from 'tempo.ts/viem';
 import {
   getTempoClient,
   TIP20_ABI,
@@ -178,8 +179,9 @@ export class ConcurrentService {
   /**
    * Get the current nonce for a specific nonceKey.
    *
-   * Uses Tempo's RPC extension that accepts a third parameter for nonceKey:
-   * eth_getTransactionCount(address, "pending", nonceKey)
+   * Uses Tempo's nonce precompile to query the nonce for a specific key.
+   * NonceKey 0 is reserved for protocol nonces (standard sequential transactions).
+   * NonceKeys 1-255 are available for parallel transaction execution.
    *
    * @param nonceKey - The nonce key to query (0-255)
    * @param address - Optional address to query (defaults to wallet)
@@ -196,18 +198,24 @@ export class ConcurrentService {
     }
 
     const targetAddress = address ?? this.client.getAddress();
-    const client = this.getPublicClient();
+    const publicClient = this.getPublicClient();
 
-    // Tempo extends eth_getTransactionCount to accept nonceKey as third param
-    const nonce = await client.request({
-      method: 'eth_getTransactionCount' as 'eth_getTransactionCount',
-      params: [targetAddress, 'pending', nonceKey] as unknown as [
-        Address,
-        'pending',
-      ],
+    // NonceKey 0 uses standard eth_getTransactionCount (protocol nonce)
+    if (nonceKey === 0) {
+      const nonce = await publicClient.getTransactionCount({
+        address: targetAddress,
+        blockTag: 'pending',
+      });
+      return BigInt(nonce);
+    }
+
+    // NonceKeys 1-255 use Tempo's nonce precompile
+    const nonce = await Actions.nonce.getNonce(publicClient, {
+      account: targetAddress,
+      nonceKey: BigInt(nonceKey),
     });
 
-    return BigInt(nonce);
+    return nonce;
   }
 
   /**
@@ -399,6 +407,10 @@ export class ConcurrentService {
   /**
    * Send a single chunk of concurrent payments.
    *
+   * Each payment is assigned a unique nonceKey. We query the current nonce
+   * for each key from Tempo's nonce precompile, then send transactions
+   * in parallel with explicit nonces.
+   *
    * @private
    */
   private async sendChunk(
@@ -406,7 +418,8 @@ export class ConcurrentService {
     startNonceKey: number,
     waitForConfirmation: boolean
   ): Promise<ConcurrentTransactionResult[]> {
-    // Fetch nonces for all keys in parallel
+    // Fetch current nonces for all keys in parallel using the nonce precompile
+    // This is required because the SDK doesn't auto-query nonces for nonceKeys
     const noncePromises = payments.map((_, index) =>
       this.getNonceForKey(startNonceKey + index)
     );
@@ -431,13 +444,13 @@ export class ConcurrentService {
               args: [payment.to, payment.amount],
             });
 
-        // Send with specific nonceKey (convert bigint nonce to number)
+        // Send with specific nonceKey and queried nonce
         const hash = await this.client.sendConcurrentTransaction({
           to: payment.token,
           data,
           value: 0n,
-          nonce: Number(nonce),
           nonceKey,
+          nonce: Number(nonce),
         });
 
         return { nonceKey, hash, status: 'pending' as const };

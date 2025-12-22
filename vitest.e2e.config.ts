@@ -31,8 +31,10 @@ export default defineConfig({
       concurrent: false,
     },
 
-    // Retry failed tests once (blockchain can be flaky)
-    retry: 1,
+    // Don't retry E2E tests - blockchain state changes make retries unreliable
+    // Write operations may have succeeded even if the test "failed" (e.g., timeout)
+    // Retrying with same nonceKeys after state change causes nonce conflicts
+    retry: 0,
 
     // More verbose output for E2E debugging
     reporters: ['verbose'],

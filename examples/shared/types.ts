@@ -707,3 +707,124 @@ export interface UpdateSpendingLimitResult {
   timestamp?: string;
   error?: ErrorDetails;
 }
+
+// =============================================================================
+// Rewards Types (TIP-20 Rewards)
+// =============================================================================
+
+export interface OptInRewardsInput {
+  token: string;
+}
+
+export interface OptInRewardsResult {
+  success: boolean;
+  transactionHash?: string;
+  blockNumber?: number;
+  token?: string;
+  tokenSymbol?: string;
+  account?: string;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
+export interface OptOutRewardsInput {
+  token: string;
+  claimPending?: boolean;
+}
+
+export interface OptOutRewardsResult {
+  success: boolean;
+  transactionHash?: string;
+  blockNumber?: number;
+  token?: string;
+  tokenSymbol?: string;
+  account?: string;
+  claimedAmount?: string;
+  claimedAmountFormatted?: string;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
+export interface ClaimRewardsInput {
+  token: string;
+}
+
+export interface ClaimRewardsResult {
+  success: boolean;
+  transactionHash?: string;
+  blockNumber?: number;
+  token?: string;
+  tokenSymbol?: string;
+  account?: string;
+  amountClaimed?: string;
+  amountClaimedFormatted?: string;
+  recipient?: string;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
+export interface GetPendingRewardsInput {
+  token: string;
+  address?: string;
+}
+
+export interface GetPendingRewardsResult {
+  token: string;
+  tokenSymbol: string;
+  address: string;
+  pendingRewards: string;
+  pendingRewardsFormatted: string;
+  isOptedIn: boolean;
+}
+
+export interface SetRewardRecipientInput {
+  token: string;
+  recipient: string;
+}
+
+export interface SetRewardRecipientResult {
+  success: boolean;
+  transactionHash?: string;
+  blockNumber?: number;
+  token?: string;
+  tokenSymbol?: string;
+  account?: string;
+  recipient?: string;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
+export interface GetRewardStatusInput {
+  token: string;
+  address?: string;
+}
+
+export interface GetRewardStatusResult {
+  token: string;
+  tokenSymbol: string;
+  address: string;
+  isOptedIn: boolean;
+  pendingRewards: string;
+  pendingRewardsFormatted: string;
+  optedInBalance: string;
+  optedInBalanceFormatted: string;
+  totalBalance: string;
+  totalBalanceFormatted: string;
+  rewardRecipient: string | null;
+  totalClaimed: string;
+  totalClaimedFormatted: string;
+  tokenStats: {
+    totalOptedInSupply: string;
+    totalOptedInSupplyFormatted: string;
+    totalDistributed: string;
+    totalDistributedFormatted: string;
+  };
+}
