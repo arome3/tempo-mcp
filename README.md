@@ -50,6 +50,9 @@ Then ask Claude: *"What's my AlphaUSD balance?"*
 | "Get access key info for 0x..." | Query session key details and status |
 | "Check remaining limit for access key 0x..." | View spending allowance left |
 | "Revoke access key 0x..." | Permanently disable a session key |
+| "What's my reward status for AlphaUSD?" | Check opt-in status and pending rewards |
+| "Opt into rewards for AlphaUSD" | Start earning pro-rata token rewards |
+| "Claim my pending rewards" | Claim accrued rewards to your wallet |
 
 ---
 
@@ -98,6 +101,7 @@ AI agents are evolving from assistants into autonomous actors that can take real
 - **Role Management** — Grant, revoke, and query TIP-20 roles (admin, issuer, pause, unpause)
 - **Pause Control** — Emergency pause/unpause token transfers (requires PAUSE_ROLE/UNPAUSE_ROLE)
 - **Policy Compliance** — TIP-403 whitelist/blacklist management and pre-transfer validation
+- **Rewards Management** — TIP-20 opt-in rewards: opt-in/out, claim rewards, set recipient, view status
 
 ### Security
 - **Spending Limits** — Per-token and daily USD limits
@@ -301,6 +305,17 @@ const result = await client.callTool({
 | `revoke_access_key` | Permanently disable an access key | `keyId` |
 | `update_spending_limit` | Modify token spending limit for a key | `keyId`, `token`, `newLimit` |
 
+### Rewards Tools (TIP-20 Rewards)
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `opt_in_rewards` | Opt into token rewards program | `token` |
+| `opt_out_rewards` | Opt out of rewards (optionally claim pending) | `token`, `claimPending?` |
+| `claim_rewards` | Claim pending rewards | `token` |
+| `get_pending_rewards` | Check pending reward amount | `token`, `address?` |
+| `set_reward_recipient` | Set auto-forward address for rewards | `token`, `recipient` |
+| `get_reward_status` | Get full reward status and token stats | `token`, `address?` |
+
 ### Exchange Tools
 
 | Tool | Description | Key Parameters |
@@ -320,6 +335,7 @@ Resources provide read-only access to blockchain data via URI patterns:
 | `tempo://account/{address}` | Account info and token balances |
 | `tempo://token/{address}` | TIP-20 token metadata |
 | `tempo://token/{address}/roles` | Token role assignments and pause status |
+| `tempo://token/{address}/rewards` | Token rewards status (opt-in, pending, stats) |
 | `tempo://tx/{hash}` | Transaction details |
 | `tempo://block/{number\|"latest"}` | Block information |
 | `tempo://policy/{id}` | TIP-403 policy details (type, owner, token count) |
@@ -347,6 +363,7 @@ Prompts provide reusable conversation templates:
 | `spending-report` | Analyze spending by recipient | `period`, `groupBy?` |
 | `role-audit` | Audit token role assignments | `token` |
 | `compliance-report` | Generate TIP-403 compliance status report | `addresses`, `policyId?`, `token?` |
+| `rewards-summary` | Summarize rewards status and pending claims | `token`, `address?` |
 
 ---
 

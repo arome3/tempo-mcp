@@ -10,6 +10,7 @@
  * - tempo://account/{address} - Account info and token balances
  * - tempo://token/{address} - TIP-20 token metadata
  * - tempo://token/{address}/roles - TIP-20 token role assignments
+ * - tempo://token/{address}/rewards - TIP-20 token rewards status
  * - tempo://tx/{hash} - Transaction details
  * - tempo://block/{identifier} - Block information (number or "latest")
  */
@@ -211,6 +212,91 @@ export function registerAllResources(): void {
         const rolesInfo = await roleService.getTokenRolesInfo(address);
 
         return createSuccessResponse(uri, rolesInfo);
+      } catch (error) {
+        return createErrorResponse(uri, error);
+      }
+    }
+  );
+
+  // ===========================================================================
+  // Dynamic Resource: Token Rewards Status
+  // ===========================================================================
+  server.registerResource(
+    'token-rewards',
+    new ResourceTemplate('tempo://token/{address}/rewards', { list: undefined }),
+    {
+      title: 'Token Rewards Status',
+      description:
+        'TIP-20 token rewards information including opt-in status, pending rewards, ' +
+        'total claimed, reward recipient, and pool statistics for the configured wallet',
+      mimeType: 'application/json',
+    },
+    async (uri, params) => {
+      const address = params.address as Address;
+
+      try {
+        const { getRewardsService } = await import('../services/rewards-service.js');
+        const { getTokenService } = await import('../services/token-service.js');
+        const { getTempoClient } = await import('../services/tempo-client.js');
+        const { formatUnits } = await import('viem');
+
+        const rewardsService = getRewardsService();
+        const tokenService = getTokenService();
+        const tempoClient = getTempoClient();
+
+        // Get token info for formatting
+        const tokenInfo = await tokenService.getTokenInfo(address);
+        const decimals = tokenInfo.decimals;
+        const symbol = tokenInfo.symbol;
+
+        // Get reward status for the configured wallet
+        const walletAddress = tempoClient.getAddress();
+        const status = await rewardsService.getRewardStatus(address, walletAddress);
+
+        // Calculate participation rate
+        let participationRate = '0.00%';
+        if (status.totalBalance > 0n) {
+          const rate = (Number(status.optedInBalance) / Number(status.totalBalance)) * 100;
+          participationRate = `${rate.toFixed(2)}%`;
+        }
+
+        // Calculate share of pool
+        let shareOfPool = '0.00%';
+        if (status.tokenStats.totalOptedInSupply > 0n) {
+          const share =
+            (Number(status.optedInBalance) / Number(status.tokenStats.totalOptedInSupply)) * 100;
+          shareOfPool = `${share.toFixed(4)}%`;
+        }
+
+        // Format helper
+        const formatAmount = (amount: bigint) => `${formatUnits(amount, decimals)} ${symbol}`;
+
+        const rewardsData = {
+          token: address,
+          tokenSymbol: symbol,
+          account: walletAddress,
+          isOptedIn: status.isOptedIn,
+          pendingRewards: status.pendingRewards.toString(),
+          pendingRewardsFormatted: formatAmount(status.pendingRewards),
+          optedInBalance: status.optedInBalance.toString(),
+          optedInBalanceFormatted: formatAmount(status.optedInBalance),
+          totalBalance: status.totalBalance.toString(),
+          totalBalanceFormatted: formatAmount(status.totalBalance),
+          participationRate,
+          rewardRecipient: status.rewardRecipient,
+          totalClaimed: status.totalClaimed.toString(),
+          totalClaimedFormatted: formatAmount(status.totalClaimed),
+          tokenStats: {
+            totalOptedInSupply: status.tokenStats.totalOptedInSupply.toString(),
+            totalOptedInSupplyFormatted: formatAmount(status.tokenStats.totalOptedInSupply),
+            totalDistributed: status.tokenStats.totalDistributed.toString(),
+            totalDistributedFormatted: formatAmount(status.tokenStats.totalDistributed),
+          },
+          shareOfPool,
+          timestamp: new Date().toISOString(),
+        };
+
+        return createSuccessResponse(uri, rewardsData);
       } catch (error) {
         return createErrorResponse(uri, error);
       }

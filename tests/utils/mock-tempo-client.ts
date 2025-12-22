@@ -24,6 +24,7 @@ export interface MockTransactionReceipt {
   contractAddress: `0x${string}` | null;
   status: 'success' | 'reverted';
   gasUsed: bigint;
+  logs: readonly { topics: readonly string[]; data: string }[];
 }
 
 /**
@@ -54,6 +55,23 @@ export interface MockTempoClientOptions {
   roleMembers?: Record<string, string[]>;
   /** Whether address has specific role */
   hasRole?: boolean;
+  /** Rewards-related mock data */
+  rewards?: {
+    /** Whether address is opted into rewards */
+    isOptedIn?: boolean;
+    /** Pending rewards amount */
+    pendingRewards?: bigint;
+    /** Opted-in balance */
+    optedInBalance?: bigint;
+    /** Reward recipient address (null for none) */
+    rewardRecipient?: string | null;
+    /** Total rewards claimed */
+    totalClaimed?: bigint;
+    /** Total opted-in supply */
+    totalOptedInSupply?: bigint;
+    /** Total rewards distributed */
+    totalDistributed?: bigint;
+  };
 }
 
 // =============================================================================
@@ -80,7 +98,19 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
     isPaused = false,
     roleMembers = {},
     hasRole = true,
+    rewards = {},
   } = options;
+
+  // Default rewards values
+  const rewardsDefaults = {
+    isOptedIn: rewards.isOptedIn ?? false,
+    pendingRewards: rewards.pendingRewards ?? BigInt(100 * 1e6), // 100 tokens
+    optedInBalance: rewards.optedInBalance ?? balance,
+    rewardRecipient: rewards.rewardRecipient ?? null,
+    totalClaimed: rewards.totalClaimed ?? BigInt(50 * 1e6), // 50 tokens
+    totalOptedInSupply: rewards.totalOptedInSupply ?? BigInt(1000000 * 1e6), // 1M tokens
+    totalDistributed: rewards.totalDistributed ?? BigInt(10000 * 1e6), // 10K tokens
+  };
 
   const maybeThrow = (method: string) => {
     if (shouldFail && (!failOnMethod || failOnMethod === method)) {
@@ -193,12 +223,38 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
           if (functionName === 'symbol') {
             return Promise.resolve(tokenSymbol);
           }
+          // Handle rewards-related contract calls
+          if (functionName === 'isOptedInRewards') {
+            return Promise.resolve(rewardsDefaults.isOptedIn);
+          }
+          if (functionName === 'pendingRewards') {
+            return Promise.resolve(rewardsDefaults.pendingRewards);
+          }
+          if (functionName === 'optedInBalance') {
+            return Promise.resolve(rewardsDefaults.optedInBalance);
+          }
+          if (functionName === 'rewardRecipient') {
+            const zeroAddress = '0x0000000000000000000000000000000000000000';
+            return Promise.resolve(rewardsDefaults.rewardRecipient ?? zeroAddress);
+          }
+          if (functionName === 'totalRewardsClaimed') {
+            return Promise.resolve(rewardsDefaults.totalClaimed);
+          }
+          if (functionName === 'totalOptedInSupply') {
+            return Promise.resolve(rewardsDefaults.totalOptedInSupply);
+          }
+          if (functionName === 'totalRewardsDistributed') {
+            return Promise.resolve(rewardsDefaults.totalDistributed);
+          }
           return Promise.resolve(undefined);
         }
       ),
       waitForTransactionReceipt: vi.fn().mockImplementation(() => {
         maybeThrow('waitForTransactionReceipt');
-        return Promise.resolve(createMockReceipt(txHash));
+        // Include claimed amount in logs for rewards claim transactions
+        return Promise.resolve(createMockReceipt(txHash, {
+          claimedAmount: rewardsDefaults.pendingRewards,
+        }));
       }),
     },
 
@@ -245,8 +301,26 @@ export function createMockReceipt(
     status?: 'success' | 'reverted';
     blockNumber?: bigint;
     gasUsed?: bigint;
+    claimedAmount?: bigint;
   } = {}
 ): MockTransactionReceipt {
+  // Create mock RewardsClaimed event log if claimedAmount is provided
+  const logs: { topics: readonly string[]; data: string }[] = [];
+  if (options.claimedAmount !== undefined) {
+    // RewardsClaimed(address indexed account, uint256 amount, address indexed recipient)
+    // topics[0] = event signature hash, topics[1] = account, topics[2] = recipient
+    // data = amount (uint256)
+    const amountHex = options.claimedAmount.toString(16).padStart(64, '0');
+    logs.push({
+      topics: [
+        '0x' + 'a'.repeat(64), // Event signature (mock)
+        '0x' + '0'.repeat(24) + TEST_ADDRESSES.VALID.slice(2), // Indexed account
+        '0x' + '0'.repeat(24) + TEST_ADDRESSES.VALID.slice(2), // Indexed recipient
+      ],
+      data: '0x' + amountHex,
+    });
+  }
+
   return {
     transactionHash: txHash,
     blockNumber: options.blockNumber ?? BigInt(12345),
@@ -256,6 +330,7 @@ export function createMockReceipt(
     contractAddress: null,
     status: options.status ?? 'success',
     gasUsed: options.gasUsed ?? BigInt(21000),
+    logs,
   };
 }
 

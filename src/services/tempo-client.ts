@@ -26,6 +26,7 @@ import {
 } from 'viem';
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 import { tempo } from 'tempo.ts/chains';
+import { tempoActions } from 'tempo.ts/viem';
 import { getConfig } from '../config/index.js';
 import { InternalError, ValidationError } from '../utils/errors.js';
 
@@ -255,10 +256,10 @@ export interface ConcurrentTransactionParams {
   data: `0x${string}`;
   /** Optional value to send (usually 0 for TIP-20) */
   value?: bigint;
-  /** Explicit nonce within the key sequence */
-  nonce: number;
   /** Parallel execution channel (0-255) */
   nonceKey: number;
+  /** Nonce for this nonceKey (queried from nonce precompile) */
+  nonce: number;
 }
 
 // =============================================================================
@@ -333,7 +334,9 @@ export class TempoClient {
         account: this.account,
         chain: this.chain,
         transport: http(config.network.rpcUrl),
-      }).extend(walletActions) as TempoWalletClient;
+      })
+        .extend(walletActions)
+        .extend(tempoActions()) as TempoWalletClient;
     }
   }
 
@@ -662,12 +665,13 @@ export class TempoClient {
     }
 
     // tempo.ts extends viem with nonceKey support for TempoTransaction (0x76)
+    // We must pass explicit nonce because the SDK doesn't auto-query nonces for nonceKeys
     const hash = await this.walletClient.sendTransaction({
       to: params.to,
       data: params.data,
       value: params.value ?? BigInt(0),
       nonce: params.nonce,
-      nonceKey: params.nonceKey, // Tempo-specific: parallel execution channel
+      nonceKey: BigInt(params.nonceKey), // Tempo-specific: parallel execution channel
       feeToken: this.feeToken,
     } as Parameters<typeof this.walletClient.sendTransaction>[0]);
 

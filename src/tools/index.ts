@@ -14,6 +14,7 @@
  * - policy: TIP-403 compliance (whitelist, blacklist, transfer validation)
  * - sponsorship: Fee-sponsored gasless transactions
  * - concurrent: Parallel transaction execution via nonceKey
+ * - rewards: TIP-20 rewards (opt-in, claim, status, auto-forwarding)
  */
 
 import { registerPaymentTools } from './payments/index.js';
@@ -25,6 +26,7 @@ import { registerPolicyTools } from './policy/index.js';
 import { registerSponsorshipTools } from './sponsorship/index.js';
 import { registerConcurrentTools } from './concurrent/index.js';
 import { registerAccessKeyTools } from './access-keys/index.js';
+import { registerRewardsTools } from './rewards/index.js';
 
 /**
  * Register all MCP tools with the server.
@@ -43,4 +45,5 @@ export function registerAllTools(): void {
   registerSponsorshipTools();
   registerConcurrentTools();
   registerAccessKeyTools();
+  registerRewardsTools();
 }
