@@ -15,6 +15,7 @@
  * - sponsorship: Fee-sponsored gasless transactions
  * - concurrent: Parallel transaction execution via nonceKey
  * - rewards: TIP-20 rewards (opt-in, claim, status, auto-forwarding)
+ * - fee-amm: Fee AMM liquidity management for gas token conversion
  */
 
 import { registerPaymentTools } from './payments/index.js';
@@ -27,6 +28,7 @@ import { registerSponsorshipTools } from './sponsorship/index.js';
 import { registerConcurrentTools } from './concurrent/index.js';
 import { registerAccessKeyTools } from './access-keys/index.js';
 import { registerRewardsTools } from './rewards/index.js';
+import { registerFeeAmmTools } from './fee-amm/index.js';
 
 /**
  * Register all MCP tools with the server.
@@ -46,4 +48,5 @@ export function registerAllTools(): void {
   registerConcurrentTools();
   registerAccessKeyTools();
   registerRewardsTools();
+  registerFeeAmmTools();
 }

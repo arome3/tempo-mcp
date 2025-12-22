@@ -43,6 +43,8 @@ export const TEST_ADDRESSES = {
 export const TEST_TOKENS = {
   /** AlphaUSD - primary test stablecoin */
   ALPHA_USD: '0x20c0000000000000000000000000000000000001',
+  /** BetaUSD - secondary test stablecoin */
+  BETA_USD: '0x20c0000000000000000000000000000000000002',
   /** PathUSD - quote token for DEX */
   PATH_USD: '0x20c0000000000000000000000000000000000000',
   /** Invalid token address */

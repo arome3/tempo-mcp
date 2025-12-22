@@ -53,6 +53,9 @@ Then ask Claude: *"What's my AlphaUSD balance?"*
 | "What's my reward status for AlphaUSD?" | Check opt-in status and pending rewards |
 | "Opt into rewards for AlphaUSD" | Start earning pro-rata token rewards |
 | "Claim my pending rewards" | Claim accrued rewards to your wallet |
+| "What's the Fee AMM pool info for AlphaUSD?" | Check pool reserves and LP supply |
+| "Add 1000 AlphaUSD liquidity to the Fee AMM" | Provide liquidity to earn conversion fees |
+| "What's my LP position in the Fee AMM?" | View your share and underlying token value |
 
 ---
 
@@ -77,6 +80,7 @@ AI agents are evolving from assistants into autonomous actors that can take real
 - **Micropayments**: Enable pay-per-use AI services
 - **Compliance Management**: Automate KYC/AML whitelist maintenance and transfer validation
 - **Delegated Agent Signing**: Use access keys (session keys) for AI agents with spending limits
+- **Fee Liquidity Provision**: Earn yields by providing liquidity to the Fee AMM for gas conversions
 
 ---
 
@@ -102,6 +106,7 @@ AI agents are evolving from assistants into autonomous actors that can take real
 - **Pause Control** — Emergency pause/unpause token transfers (requires PAUSE_ROLE/UNPAUSE_ROLE)
 - **Policy Compliance** — TIP-403 whitelist/blacklist management and pre-transfer validation
 - **Rewards Management** — TIP-20 opt-in rewards: opt-in/out, claim rewards, set recipient, view status
+- **Fee AMM Liquidity** — Provide liquidity to the gas fee conversion pool and earn from stablecoin swaps
 
 ### Security
 - **Spending Limits** — Per-token and daily USD limits
@@ -323,6 +328,16 @@ const result = await client.callTool({
 | `get_swap_quote` | Get DEX quote for swap | `fromToken`, `toToken`, `amount` |
 | `swap_stablecoins` | Execute stablecoin swap | `fromToken`, `toToken`, `amount`, `slippage?` |
 
+### Fee AMM Tools (Liquidity Management)
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `get_fee_pool_info` | Get pool reserves, LP supply, and swap rate | `userToken`, `validatorToken?` |
+| `get_lp_position` | Check LP balance and underlying token value | `userToken`, `validatorToken?`, `address?` |
+| `estimate_fee_swap` | Quote output for fee token conversion | `fromToken`, `toToken`, `amount` |
+| `add_fee_liquidity` | Add liquidity to earn conversion fees | `userToken`, `amountUser`, `amountValidator` |
+| `remove_fee_liquidity` | Withdraw liquidity and LP tokens | `userToken`, `lpAmount` |
+
 ---
 
 ## MCP Resources Reference
@@ -343,6 +358,7 @@ Resources provide read-only access to blockchain data via URI patterns:
 | `tempo://policy/{id}/blacklist/{address}` | Check if address is blacklisted |
 | `tempo://access-key/{account}/{keyId}` | Access key info (type, expiry, revoked status) |
 | `tempo://access-key/{account}/{keyId}/limit/{token}` | Remaining spending limit for token |
+| `tempo://fee-amm/{userToken}/{validatorToken}` | Fee AMM pool info (reserves, LP supply, swap rate) |
 
 **Example Usage:**
 ```
@@ -364,6 +380,7 @@ Prompts provide reusable conversation templates:
 | `role-audit` | Audit token role assignments | `token` |
 | `compliance-report` | Generate TIP-403 compliance status report | `addresses`, `policyId?`, `token?` |
 | `rewards-summary` | Summarize rewards status and pending claims | `token`, `address?` |
+| `fee-amm-summary` | Summarize Fee AMM pool status and LP position | `userToken`, `address?` |
 
 ---
 

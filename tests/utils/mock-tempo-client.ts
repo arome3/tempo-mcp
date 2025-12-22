@@ -72,6 +72,23 @@ export interface MockTempoClientOptions {
     /** Total rewards distributed */
     totalDistributed?: bigint;
   };
+  /** Fee AMM-related mock data */
+  feeAmm?: {
+    /** User token reserve in pool */
+    reserveUser?: bigint;
+    /** Validator token reserve in pool */
+    reserveValidator?: bigint;
+    /** Total LP token supply */
+    totalLpSupply?: bigint;
+    /** LP token balance for account */
+    lpBalance?: bigint;
+    /** Quote output for swaps */
+    quoteOutput?: bigint;
+    /** LP tokens minted on add liquidity */
+    lpTokensMinted?: bigint;
+    /** Token allowance for approvals */
+    allowance?: bigint;
+  };
 }
 
 // =============================================================================
@@ -99,7 +116,19 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
     roleMembers = {},
     hasRole = true,
     rewards = {},
+    feeAmm = {},
   } = options;
+
+  // Default Fee AMM values
+  const feeAmmDefaults = {
+    reserveUser: feeAmm.reserveUser ?? BigInt(1000000 * 1e6), // 1M tokens
+    reserveValidator: feeAmm.reserveValidator ?? BigInt(1000000 * 1e6), // 1M tokens
+    totalLpSupply: feeAmm.totalLpSupply ?? BigInt(2000000 * 1e6), // 2M LP tokens
+    lpBalance: feeAmm.lpBalance ?? BigInt(10000 * 1e6), // 10K LP tokens
+    quoteOutput: feeAmm.quoteOutput ?? BigInt(998500), // ~0.9985 rate for 1M input
+    lpTokensMinted: feeAmm.lpTokensMinted ?? BigInt(10000 * 1e6), // 10K LP tokens
+    allowance: feeAmm.allowance ?? BigInt(0), // No allowance by default
+  };
 
   // Default rewards values
   const rewardsDefaults = {
@@ -213,7 +242,12 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
             const members = roleMembers[roleHash] || [];
             return Promise.resolve(members[index] ?? TEST_ADDRESSES.VALID);
           }
-          // Default: return balance for balanceOf
+          // Handle Fee AMM balanceOf with 3 args BEFORE generic balanceOf
+          // Fee AMM balanceOf(userToken, validatorToken, account)
+          if (functionName === 'balanceOf' && args && args.length === 3) {
+            return Promise.resolve(feeAmmDefaults.lpBalance);
+          }
+          // Default: return balance for balanceOf (1 arg - token balanceOf(account))
           if (functionName === 'balanceOf') {
             return Promise.resolve(balance);
           }
@@ -245,6 +279,20 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
           }
           if (functionName === 'totalRewardsDistributed') {
             return Promise.resolve(rewardsDefaults.totalDistributed);
+          }
+          // Handle Fee AMM contract calls
+          if (functionName === 'getPool') {
+            return Promise.resolve([
+              feeAmmDefaults.reserveUser,
+              feeAmmDefaults.reserveValidator,
+              feeAmmDefaults.totalLpSupply,
+            ]);
+          }
+          if (functionName === 'quote') {
+            return Promise.resolve(feeAmmDefaults.quoteOutput);
+          }
+          if (functionName === 'allowance') {
+            return Promise.resolve(feeAmmDefaults.allowance);
           }
           return Promise.resolve(undefined);
         }
@@ -302,10 +350,14 @@ export function createMockReceipt(
     blockNumber?: bigint;
     gasUsed?: bigint;
     claimedAmount?: bigint;
+    lpTokensMinted?: bigint;
+    burnAmounts?: { amountUser: bigint; amountValidator: bigint };
   } = {}
 ): MockTransactionReceipt {
-  // Create mock RewardsClaimed event log if claimedAmount is provided
+  // Create mock event logs based on options
   const logs: { topics: readonly string[]; data: string }[] = [];
+
+  // RewardsClaimed event log
   if (options.claimedAmount !== undefined) {
     // RewardsClaimed(address indexed account, uint256 amount, address indexed recipient)
     // topics[0] = event signature hash, topics[1] = account, topics[2] = recipient
@@ -318,6 +370,40 @@ export function createMockReceipt(
         '0x' + '0'.repeat(24) + TEST_ADDRESSES.VALID.slice(2), // Indexed recipient
       ],
       data: '0x' + amountHex,
+    });
+  }
+
+  // Fee AMM Mint event log
+  if (options.lpTokensMinted !== undefined) {
+    // Mint(sender, userToken, validatorToken, amountUser, amountValidator, lpTokens)
+    const amountUserHex = (BigInt(10000) * BigInt(1e6)).toString(16).padStart(64, '0');
+    const amountValidatorHex = (BigInt(10000) * BigInt(1e6)).toString(16).padStart(64, '0');
+    const lpTokensHex = options.lpTokensMinted.toString(16).padStart(64, '0');
+    logs.push({
+      topics: [
+        '0x' + 'b'.repeat(64), // Event signature (mock)
+        '0x' + '0'.repeat(24) + TEST_ADDRESSES.VALID.slice(2), // Indexed sender
+        '0x' + '0'.repeat(24) + TEST_TOKENS.ALPHA_USD.slice(2), // Indexed userToken
+        '0x' + '0'.repeat(24) + TEST_TOKENS.PATH_USD.slice(2), // Indexed validatorToken
+      ],
+      data: '0x' + amountUserHex + amountValidatorHex + lpTokensHex,
+    });
+  }
+
+  // Fee AMM Burn event log
+  if (options.burnAmounts !== undefined) {
+    // Burn(sender, userToken, validatorToken, lpAmount, amountUser, amountValidator)
+    const lpAmountHex = (BigInt(5000) * BigInt(1e6)).toString(16).padStart(64, '0');
+    const amountUserHex = options.burnAmounts.amountUser.toString(16).padStart(64, '0');
+    const amountValidatorHex = options.burnAmounts.amountValidator.toString(16).padStart(64, '0');
+    logs.push({
+      topics: [
+        '0x' + 'c'.repeat(64), // Event signature (mock)
+        '0x' + '0'.repeat(24) + TEST_ADDRESSES.VALID.slice(2), // Indexed sender
+        '0x' + '0'.repeat(24) + TEST_TOKENS.ALPHA_USD.slice(2), // Indexed userToken
+        '0x' + '0'.repeat(24) + TEST_TOKENS.PATH_USD.slice(2), // Indexed validatorToken
+      ],
+      data: '0x' + lpAmountHex + amountUserHex + amountValidatorHex,
     });
   }
 
