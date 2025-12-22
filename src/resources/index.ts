@@ -13,6 +13,7 @@
  * - tempo://token/{address}/rewards - TIP-20 token rewards status
  * - tempo://tx/{hash} - Transaction details
  * - tempo://block/{identifier} - Block information (number or "latest")
+ * - tempo://fee-amm/{userToken}/{validatorToken} - Fee AMM pool information
  */
 
 import { server } from '../server.js';
@@ -558,6 +559,84 @@ export function registerAllResources(): void {
         };
 
         return createSuccessResponse(uri, keyData);
+      } catch (error) {
+        return createErrorResponse(uri, error);
+      }
+    }
+  );
+
+  // ===========================================================================
+  // Dynamic Resource: Fee AMM Pool Information
+  // ===========================================================================
+  server.registerResource(
+    'fee-amm-pool',
+    new ResourceTemplate('tempo://fee-amm/{userToken}/{validatorToken}', { list: undefined }),
+    {
+      title: 'Fee AMM Pool Info',
+      description:
+        'Fee AMM pool information including reserves, LP supply, swap rate, and protocol fee. ' +
+        'Use this to check pool health and available liquidity for gas fee token conversion.',
+      mimeType: 'application/json',
+    },
+    async (uri, params) => {
+      const userTokenParam = params.userToken as string;
+      const validatorTokenParam = params.validatorToken as string;
+
+      try {
+        const { getFeeAmmService, PATH_USD_ADDRESS, FEE_SWAP_RATE } = await import(
+          '../services/fee-amm-service.js'
+        );
+        const { resolveTokenAddress, getTokenService } = await import(
+          '../services/token-service.js'
+        );
+        const { formatUnits } = await import('viem');
+
+        const feeAmmService = getFeeAmmService();
+        const tokenService = getTokenService();
+
+        // Resolve token addresses (support both addresses and aliases)
+        const userTokenAddress = resolveTokenAddress(userTokenParam);
+        const validatorTokenAddress = validatorTokenParam.toLowerCase() === 'pathusd'
+          ? PATH_USD_ADDRESS
+          : resolveTokenAddress(validatorTokenParam);
+
+        // Get pool info
+        const poolInfo = await feeAmmService.getPoolInfo(
+          userTokenAddress,
+          validatorTokenAddress
+        );
+
+        // Get token metadata for formatting
+        const [userTokenInfo, validatorTokenInfo] = await Promise.all([
+          tokenService.getTokenInfo(userTokenAddress),
+          tokenService.getTokenInfo(validatorTokenAddress),
+        ]);
+
+        const userDecimals = userTokenInfo.decimals;
+        const validatorDecimals = validatorTokenInfo.decimals;
+
+        const poolData = {
+          pool: `${userTokenInfo.symbol}/${validatorTokenInfo.symbol}`,
+          userToken: {
+            address: userTokenAddress,
+            symbol: userTokenInfo.symbol,
+            reserve: formatUnits(poolInfo.reserveUser, userDecimals),
+            reserveRaw: poolInfo.reserveUser.toString(),
+          },
+          validatorToken: {
+            address: validatorTokenAddress,
+            symbol: validatorTokenInfo.symbol,
+            reserve: formatUnits(poolInfo.reserveValidator, validatorDecimals),
+            reserveRaw: poolInfo.reserveValidator.toString(),
+          },
+          totalLpSupply: formatUnits(poolInfo.totalLpSupply, 6),
+          totalLpSupplyRaw: poolInfo.totalLpSupply.toString(),
+          swapRate: FEE_SWAP_RATE,
+          protocolFee: '0.15%',
+          timestamp: new Date().toISOString(),
+        };
+
+        return createSuccessResponse(uri, poolData);
       } catch (error) {
         return createErrorResponse(uri, error);
       }
