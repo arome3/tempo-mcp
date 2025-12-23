@@ -18,6 +18,7 @@ import {
   getTempoClient,
   TIP20_ABI,
   TIP20_FACTORY_ABI,
+  TIP20_ERROR_SIGNATURES,
 } from './tempo-client.js';
 import { getConfig } from '../config/index.js';
 import { ValidationError, BlockchainError } from '../utils/errors.js';
@@ -28,6 +29,28 @@ import { ValidationError, BlockchainError } from '../utils/errors.js';
 
 /** TIP-20 tokens always have 6 decimals */
 const TIP20_DECIMALS = 6;
+
+/**
+ * Extract a friendly error message from a contract revert.
+ * Checks for known TIP-20 error signatures.
+ */
+function getFriendlyErrorMessage(error: unknown): string | null {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+
+  // Check for known error signatures
+  for (const [signature, description] of Object.entries(TIP20_ERROR_SIGNATURES)) {
+    if (errorMessage.includes(signature)) {
+      return description;
+    }
+  }
+
+  // Check for Unauthorized pattern (signature 0x82b42900)
+  if (errorMessage.includes('0x82b42900')) {
+    return 'Unauthorized - caller does not have the required role. Use grant_role to assign ISSUER_ROLE before minting.';
+  }
+
+  return null;
+}
 
 // =============================================================================
 // Types
@@ -167,11 +190,30 @@ export class TokenService {
 
   /**
    * Parse the TokenCreated event from the transaction receipt.
+   *
+   * TokenCreated event signature:
+   *   event TokenCreated(address indexed token, uint256 indexed id, string name,
+   *                      string symbol, string currency, address indexed quoteToken, address admin)
+   *
+   * Topics layout:
+   *   topics[0] = event signature hash
+   *   topics[1] = token address (indexed)
+   *   topics[2] = id (indexed)
+   *   topics[3] = quoteToken (indexed)
    */
   private parseTokenCreatedEvent(
     receipt: Awaited<ReturnType<ReturnType<typeof getTempoClient>['waitForTransaction']>>
   ): Address {
+    // TokenCreated event signature hash
+    const TOKEN_CREATED_TOPIC = '0x' + 'TokenCreated(address,uint256,string,string,string,address,address)'
+      .split('')
+      .reduce((hash, char) => {
+        // Simple check - we'll also try without this
+        return hash;
+      }, '');
+
     for (const log of receipt.logs) {
+      // Method 1: Try standard decodeEventLog
       try {
         const decoded = decodeEventLog({
           abi: TIP20_FACTORY_ABI,
@@ -183,9 +225,53 @@ export class TokenService {
           return (decoded.args as { token: Address }).token;
         }
       } catch {
-        // Not the event we're looking for, continue
+        // Continue to fallback methods
+      }
+
+      // Method 2: Try extracting token address from topics[1] directly
+      // The token address is the first indexed parameter after the event signature
+      if (log.topics && log.topics.length >= 2) {
+        try {
+          // topics[1] contains the token address (padded to 32 bytes)
+          const tokenTopic = log.topics[1];
+          if (tokenTopic && tokenTopic.length === 66) {
+            // Extract address from last 40 characters (20 bytes)
+            const potentialAddress = ('0x' + tokenTopic.slice(-40)) as Address;
+
+            // Verify it looks like a valid TIP-20 address (starts with 0x20c)
+            // TIP-20 tokens are in the 0x20c... address range
+            if (potentialAddress.toLowerCase().startsWith('0x20c')) {
+              return potentialAddress;
+            }
+          }
+        } catch {
+          // Continue searching
+        }
       }
     }
+
+    // Method 3: Look for any address in the 0x20c range in all topics
+    for (const log of receipt.logs) {
+      if (log.topics) {
+        for (const topic of log.topics) {
+          if (topic && topic.length === 66) {
+            const potentialAddress = ('0x' + topic.slice(-40)) as Address;
+            if (potentialAddress.toLowerCase().startsWith('0x20c0')) {
+              // This looks like a TIP-20 token address
+              return potentialAddress;
+            }
+          }
+        }
+      }
+    }
+
+    // Include debug info in error
+    const logsSummary = receipt.logs.map((log, i) => ({
+      index: i,
+      address: log.address,
+      topicsCount: log.topics?.length ?? 0,
+      topics: log.topics?.slice(0, 2), // First 2 topics for debugging
+    }));
 
     throw new BlockchainError(
       3010,
@@ -194,6 +280,8 @@ export class TokenService {
         recoverable: false,
         details: {
           suggestion: 'Check the transaction logs manually',
+          logsCount: receipt.logs.length,
+          logsSummary: JSON.stringify(logsSummary),
         },
       }
     );
@@ -306,7 +394,23 @@ export class TokenService {
         >[0]);
       }
     } catch (error) {
-      // Check if error is due to missing ISSUER_ROLE
+      // Check for known TIP-20 errors
+      const friendlyMessage = getFriendlyErrorMessage(error);
+      if (friendlyMessage) {
+        throw new BlockchainError(
+          3006,
+          `Mint failed: ${friendlyMessage}`,
+          {
+            recoverable: false,
+            details: {
+              suggestion:
+                'Use the grant_role tool to assign ISSUER_ROLE to your wallet, then retry minting.',
+            },
+          }
+        );
+      }
+
+      // Check if error is due to missing ISSUER_ROLE (legacy check)
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       if (
@@ -320,7 +424,7 @@ export class TokenService {
             recoverable: false,
             details: {
               suggestion:
-                'Ensure you are the token admin or have been granted ISSUER_ROLE',
+                'Use the grant_role tool to assign ISSUER_ROLE to your wallet, then retry minting.',
             },
           }
         );
@@ -399,6 +503,22 @@ export class TokenService {
         >[0]);
       }
     } catch (error) {
+      // Check for known TIP-20 errors
+      const friendlyMessage = getFriendlyErrorMessage(error);
+      if (friendlyMessage) {
+        throw new BlockchainError(
+          3006,
+          `Burn failed: ${friendlyMessage}`,
+          {
+            recoverable: false,
+            details: {
+              suggestion:
+                'Use the grant_role tool to assign ISSUER_ROLE to your wallet, then retry burning.',
+            },
+          }
+        );
+      }
+
       const errorMessage =
         error instanceof Error ? error.message : String(error);
 
@@ -414,7 +534,7 @@ export class TokenService {
             recoverable: false,
             details: {
               suggestion:
-                'Ensure you are the token admin or have been granted ISSUER_ROLE',
+                'Use the grant_role tool to assign ISSUER_ROLE to your wallet, then retry burning.',
             },
           }
         );

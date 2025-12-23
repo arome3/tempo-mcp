@@ -107,7 +107,7 @@ export class TransactionService {
     const publicClient = client['publicClient'];
 
     // Fetch transaction data
-    let tx;
+    let tx: any;
     try {
       tx = await publicClient.getTransaction({ hash });
     } catch (error) {
@@ -117,6 +117,13 @@ export class TransactionService {
 
     if (!tx) {
       throw ValidationError.transactionNotFound(hash);
+    }
+
+    // For Tempo-native transactions (type 0x76/'tempo'), extract 'to' from calls array
+    // Tempo transactions use: { calls: [{ to, input, value }] } instead of top-level to/input/value
+    let effectiveTo: Address | null = tx.to ?? null;
+    if (!effectiveTo && tx.calls && Array.isArray(tx.calls) && tx.calls.length > 0) {
+      effectiveTo = tx.calls[0].to ?? null;
     }
 
     // Fetch receipt (may not exist if pending)
@@ -152,12 +159,15 @@ export class TransactionService {
     }
 
     // Parse TIP-20 transfer data if present
+    // For Tempo transactions, input data is in calls[0].input (or calls[0].data)
     let token: TokenTransferInfo | null = null;
     let memo: string | null = null;
     let memoDecoded: string | null = null;
 
-    if (tx.to && tx.input && tx.input.length >= 10) {
-      const parsed = await this.parseTransferData(tx.input, tx.to);
+    const effectiveInput = tx.input ?? (tx.calls?.[0]?.input || tx.calls?.[0]?.data);
+
+    if (effectiveTo && effectiveInput && effectiveInput.length >= 10) {
+      const parsed = await this.parseTransferData(effectiveInput, effectiveTo);
       if (parsed) {
         token = parsed.token;
         memo = parsed.memo;
@@ -170,13 +180,16 @@ export class TransactionService {
     const gasPrice = tx.gasPrice ?? BigInt(0);
     const gasCost = formatRawAmount(gasUsed * gasPrice, 6);
 
+    // For Tempo transactions, value is in calls[0].value
+    const effectiveValue = tx.value ?? tx.calls?.[0]?.value ?? BigInt(0);
+
     return {
       hash: tx.hash,
       blockNumber: tx.blockNumber ? Number(tx.blockNumber) : null,
       blockHash: tx.blockHash ?? null,
       from: tx.from,
-      to: tx.to ?? null,
-      value: (tx.value ?? BigInt(0)).toString(),
+      to: effectiveTo,
+      value: (typeof effectiveValue === 'bigint' ? effectiveValue : BigInt(effectiveValue || 0)).toString(),
       status,
       type: tx.type ?? 'legacy',
       token,

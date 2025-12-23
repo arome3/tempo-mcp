@@ -100,13 +100,14 @@ export const ACCESS_CONTROL_ABI = [
     outputs: [],
   },
   // Check if an account has a role
+  // NOTE: Tempo TIP-20 uses non-standard order: (account, role) instead of (role, account)
   {
     name: 'hasRole',
     type: 'function',
     stateMutability: 'view',
     inputs: [
-      { name: 'role', type: 'bytes32' },
       { name: 'account', type: 'address' },
+      { name: 'role', type: 'bytes32' },
     ],
     outputs: [{ name: '', type: 'bool' }],
   },
@@ -296,11 +297,12 @@ export class RoleService {
   ): Promise<boolean> {
     const roleHash = this.getRoleHash(roleName);
 
+    // NOTE: Tempo TIP-20 uses (account, role) order instead of standard (role, account)
     const result = await this.publicClient.readContract({
       address: tokenAddress,
       abi: ACCESS_CONTROL_ABI,
       functionName: 'hasRole',
-      args: [roleHash, account],
+      args: [account, roleHash],
     });
 
     return result as boolean;
@@ -309,9 +311,13 @@ export class RoleService {
   /**
    * Get the number of accounts with a specific role.
    *
+   * Note: This requires IAccessControlEnumerable which may not be supported
+   * by all TIP-20 tokens on Tempo.
+   *
    * @param tokenAddress - TIP-20 token contract address
    * @param roleName - Role to count
    * @returns Number of accounts with the role
+   * @throws Error if role enumeration is not supported
    */
   async getRoleMemberCount(
     tokenAddress: Address,
@@ -319,22 +325,39 @@ export class RoleService {
   ): Promise<number> {
     const roleHash = this.getRoleHash(roleName);
 
-    const count = await this.publicClient.readContract({
-      address: tokenAddress,
-      abi: ACCESS_CONTROL_ABI,
-      functionName: 'getRoleMemberCount',
-      args: [roleHash],
-    });
+    try {
+      const count = await this.publicClient.readContract({
+        address: tokenAddress,
+        abi: ACCESS_CONTROL_ABI,
+        functionName: 'getRoleMemberCount',
+        args: [roleHash],
+      });
 
-    return Number(count);
+      return Number(count);
+    } catch (error) {
+      // Check if this is because the function doesn't exist (not IAccessControlEnumerable)
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('0xaa4bc69a') || errorMessage.includes('getRoleMemberCount')) {
+        throw new Error(
+          'Role enumeration is not supported by this token. ' +
+          'The token implements IAccessControl but not IAccessControlEnumerable. ' +
+          'Use has_role to check if a specific address has a role instead.'
+        );
+      }
+      throw error;
+    }
   }
 
   /**
    * Get all accounts with a specific role.
    *
+   * Note: This requires IAccessControlEnumerable which may not be supported
+   * by all TIP-20 tokens on Tempo.
+   *
    * @param tokenAddress - TIP-20 token contract address
    * @param roleName - Role to query
    * @returns Array of addresses with the role
+   * @throws Error if role enumeration is not supported
    */
   async getRoleMembers(
     tokenAddress: Address,
@@ -342,15 +365,9 @@ export class RoleService {
   ): Promise<Address[]> {
     const roleHash = this.getRoleHash(roleName);
 
-    // First get the count
-    const count = await this.publicClient.readContract({
-      address: tokenAddress,
-      abi: ACCESS_CONTROL_ABI,
-      functionName: 'getRoleMemberCount',
-      args: [roleHash],
-    });
+    // First get the count - this will throw a helpful error if not supported
+    const memberCount = await this.getRoleMemberCount(tokenAddress, roleName);
 
-    const memberCount = Number(count);
     if (memberCount === 0) {
       return [];
     }
@@ -377,27 +394,42 @@ export class RoleService {
    * Get complete role information for a token.
    *
    * Queries all roles and their members, plus pause status.
+   * If the token doesn't support IAccessControlEnumerable, returns empty member arrays.
    *
    * @param tokenAddress - TIP-20 token contract address
    * @returns Complete role information
    */
   async getTokenRolesInfo(tokenAddress: Address): Promise<TokenRolesInfo> {
-    // Fetch all roles in parallel
-    const [
-      defaultAdminMembers,
-      issuerMembers,
-      pauseMembers,
-      unpauseMembers,
-      burnBlockedMembers,
-      isPaused,
-    ] = await Promise.all([
-      this.getRoleMembers(tokenAddress, 'DEFAULT_ADMIN_ROLE'),
-      this.getRoleMembers(tokenAddress, 'ISSUER_ROLE'),
-      this.getRoleMembers(tokenAddress, 'PAUSE_ROLE'),
-      this.getRoleMembers(tokenAddress, 'UNPAUSE_ROLE'),
-      this.getRoleMembers(tokenAddress, 'BURN_BLOCKED_ROLE'),
-      this.isPaused(tokenAddress),
-    ]);
+    // Try to fetch all roles in parallel
+    // If enumeration is not supported, we'll return empty arrays
+    let defaultAdminMembers: Address[] = [];
+    let issuerMembers: Address[] = [];
+    let pauseMembers: Address[] = [];
+    let unpauseMembers: Address[] = [];
+    let burnBlockedMembers: Address[] = [];
+    let enumerationSupported = true;
+
+    try {
+      const results = await Promise.all([
+        this.getRoleMembers(tokenAddress, 'DEFAULT_ADMIN_ROLE'),
+        this.getRoleMembers(tokenAddress, 'ISSUER_ROLE'),
+        this.getRoleMembers(tokenAddress, 'PAUSE_ROLE'),
+        this.getRoleMembers(tokenAddress, 'UNPAUSE_ROLE'),
+        this.getRoleMembers(tokenAddress, 'BURN_BLOCKED_ROLE'),
+      ]);
+      [defaultAdminMembers, issuerMembers, pauseMembers, unpauseMembers, burnBlockedMembers] = results;
+    } catch (error) {
+      // If enumeration is not supported, continue with empty arrays
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('enumeration is not supported')) {
+        enumerationSupported = false;
+      } else {
+        throw error;
+      }
+    }
+
+    // Always try to get pause status (this should work)
+    const isPaused = await this.isPaused(tokenAddress);
 
     return {
       token: tokenAddress,

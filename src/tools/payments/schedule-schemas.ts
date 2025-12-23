@@ -26,9 +26,8 @@ export const recurringConfigSchema = z.object({
   /** ISO 8601 date when recurring payments should stop */
   endDate: z
     .string()
-    .datetime()
     .optional()
-    .describe('Optional end date for recurring payments (ISO 8601)'),
+    .describe('Optional end date for recurring payments (e.g., "2024-12-31" or "2024-12-31T23:59:59Z")'),
   /** Maximum number of payment occurrences */
   occurrences: z
     .number()
@@ -84,23 +83,20 @@ export const schedulePaymentInputSchema = {
     ),
   executeAt: z
     .string()
-    .datetime()
     .describe(
-      'ISO 8601 timestamp for payment execution (e.g., "2024-12-25T00:00:00Z")'
+      'Timestamp for payment execution (e.g., "2024-12-25T00:00:00Z" or "2024-12-25")'
     ),
   validFrom: z
     .string()
-    .datetime()
     .optional()
     .describe(
-      'Optional earliest execution time (ISO 8601). Defaults to executeAt.'
+      'Optional earliest execution time. Defaults to executeAt.'
     ),
   validUntil: z
     .string()
-    .datetime()
     .optional()
     .describe(
-      'Optional expiration time (ISO 8601). Transaction fails if not executed by this time.'
+      'Optional expiration time. Transaction fails if not executed by this time.'
     ),
   recurring: recurringConfigSchema
     .optional()
@@ -386,6 +382,65 @@ export function createCancelErrorResponse(error: {
     success: false,
     error,
   };
+}
+
+// =============================================================================
+// Datetime Helpers
+// =============================================================================
+
+/**
+ * Validate and normalize a datetime string to full ISO 8601 format.
+ * Rejects invalid dates like "2025-12-45" that JavaScript would auto-correct.
+ *
+ * @param dateStr - Datetime string in various formats
+ * @returns Normalized ISO 8601 string (e.g., "2024-12-31T00:00:00.000Z")
+ * @throws Error if the date is invalid
+ */
+export function normalizeDatetime(dateStr: string): string {
+  const date = new Date(dateStr);
+
+  // Check if date is valid at all
+  if (isNaN(date.getTime())) {
+    throw new Error(`Invalid datetime format: "${dateStr}". Use ISO 8601 (e.g., "2024-12-31T13:26:00Z" or "2024-12-31")`);
+  }
+
+  // Check for auto-corrected dates by comparing the parsed result back to input
+  // Extract year, month, day from input string
+  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) {
+    const [, yearStr, monthStr, dayStr] = match;
+    const inputYear = parseInt(yearStr, 10);
+    const inputMonth = parseInt(monthStr, 10);
+    const inputDay = parseInt(dayStr, 10);
+
+    // Get the actual parsed values (in UTC)
+    const parsedYear = date.getUTCFullYear();
+    const parsedMonth = date.getUTCMonth() + 1; // getUTCMonth is 0-indexed
+    const parsedDay = date.getUTCDate();
+
+    // If they don't match, the date was auto-corrected (invalid input)
+    if (inputYear !== parsedYear || inputMonth !== parsedMonth || inputDay !== parsedDay) {
+      throw new Error(
+        `Invalid date: "${dateStr}". ` +
+        `Day ${inputDay} is out of range for month ${inputMonth}. ` +
+        `Use valid dates like "2024-12-31".`
+      );
+    }
+  }
+
+  return date.toISOString();
+}
+
+/**
+ * Safely normalize a datetime string, returning null on failure.
+ */
+export function safeNormalizeDatetime(dateStr: string | undefined): string | null {
+  if (!dateStr) return null;
+  try {
+    return normalizeDatetime(dateStr);
+  } catch {
+    return null;
+  }
 }
 
 // =============================================================================

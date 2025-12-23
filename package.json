@@ -31,7 +31,9 @@
     "test:e2e:write": "E2E_WRITE=true vitest run --config vitest.e2e.config.ts",
     "lint": "eslint src/",
     "format": "prettier --write src/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "inspector": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "inspector:dev": "npx @modelcontextprotocol/inspector npx tsx src/index.ts"
   },
   "engines": {
     "node": ">=20.0.0"

@@ -226,8 +226,36 @@ export class BalanceService {
     const publicClient = client['publicClient'];
 
     // Check if contract by looking for code
+    // Note: On Tempo, all accounts are smart contract accounts (native AA).
+    // We detect "user accounts" (EOAs) by checking for the Account precompile pattern.
     const code = await publicClient.getCode({ address: targetAddress });
-    const isContract = code !== undefined && code !== '0x';
+
+    // Handle various empty bytecode representations
+    const hasCode = code !== undefined &&
+                    code !== null &&
+                    code !== '0x' &&
+                    code.length > 2; // '0x' is length 2
+
+    // Determine if this is a contract or EOA
+    // On Tempo with native AA, we need to consider:
+    // 1. System/precompiled contracts (e.g., 0x20c0...) - these are contracts
+    // 2. User accounts with AA bytecode - these are EOAs
+    // 3. Regular deployed contracts - these are contracts
+    const codeLength = typeof code === 'string' ? (code.length - 2) / 2 : 0;
+
+    // Check for system contract address patterns (e.g., 0x20c0... for system tokens)
+    const lowercaseAddress = targetAddress.toLowerCase();
+    const isSystemContract = lowercaseAddress.startsWith('0x20c0') ||
+                             lowercaseAddress.startsWith('0x7000'); // System addresses
+
+    // An address is a contract if:
+    // 1. It matches a known system contract pattern (precompiled/system tokens), OR
+    // 2. It has substantial bytecode (>= 200 bytes)
+    //
+    // On Tempo with native AA, user accounts have small AA bytecode (~50-100 bytes)
+    // while deployed contracts typically have 200+ bytes. Using 200 as threshold
+    // to correctly classify user accounts as "eoa" for better UX.
+    const isContract = isSystemContract || (hasCode && codeLength >= 200);
 
     // Get transaction count
     const txCount = await publicClient.getTransactionCount({
