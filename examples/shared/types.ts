@@ -828,3 +828,165 @@ export interface GetRewardStatusResult {
     totalDistributedFormatted: string;
   };
 }
+
+// =============================================================================
+// DEX Advanced Types (Orderbook Trading)
+// =============================================================================
+
+/**
+ * Order side for DEX limit/flip orders.
+ */
+export type OrderSide = 'buy' | 'sell';
+
+/**
+ * Order status in the DEX.
+ */
+export type OrderStatus = 'open' | 'filled' | 'cancelled' | 'queued';
+
+export interface PlaceLimitOrderInput {
+  token: string;
+  amount: string;
+  side: OrderSide;
+  tick: number;
+}
+
+export interface PlaceLimitOrderResult {
+  success: boolean;
+  orderId?: string;
+  token?: string;
+  tokenSymbol?: string;
+  side?: OrderSide;
+  amount?: string;
+  amountRaw?: string;
+  tick?: number;
+  price?: string;
+  status?: string;
+  note?: string;
+  transactionHash?: string;
+  blockNumber?: number;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
+export interface PlaceFlipOrderInput {
+  token: string;
+  amount: string;
+  side: OrderSide;
+  tick: number;
+  flipTick?: number;
+}
+
+export interface PlaceFlipOrderResult {
+  success: boolean;
+  orderId?: string;
+  token?: string;
+  tokenSymbol?: string;
+  side?: OrderSide;
+  amount?: string;
+  amountRaw?: string;
+  tick?: number;
+  tickPrice?: string;
+  flipTick?: number;
+  flipPrice?: string;
+  status?: string;
+  behavior?: string;
+  transactionHash?: string;
+  blockNumber?: number;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
+export interface CancelOrderInput {
+  orderId: string;
+}
+
+export interface CancelOrderResult {
+  success: boolean;
+  orderId?: string;
+  cancelledOrder?: {
+    side: string;
+    amount: string;
+    filled: string;
+    tick: number;
+    price: string;
+  };
+  refundedAmount?: string;
+  refundedAmountRaw?: string;
+  transactionHash?: string;
+  blockNumber?: number;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
+export interface GetOrderbookInput {
+  baseToken: string;
+  quoteToken?: string;
+  depth?: number;
+}
+
+export interface OrderbookLevel {
+  price: string;
+  tick: number;
+  amount: string;
+}
+
+export interface GetOrderbookResult {
+  pair: string;
+  baseToken: string;
+  quoteToken: string;
+  midPrice: string | null;
+  spread: string | null;
+  spreadPercent: string | null;
+  asks: OrderbookLevel[];
+  bids: OrderbookLevel[];
+}
+
+export interface GetMyOrdersInput {
+  token?: string;
+  status?: 'open' | 'filled' | 'cancelled' | 'all';
+}
+
+export interface OrderInfo {
+  orderId: string;
+  token: string;
+  tokenSymbol: string;
+  side: string;
+  amount: string;
+  filled: string;
+  remaining: string;
+  tick: number;
+  price: string;
+  status: string;
+  isFlip: boolean;
+}
+
+export interface GetMyOrdersResult {
+  totalOrders: number;
+  orders: OrderInfo[];
+}
+
+export interface GetOrderStatusInput {
+  orderId: string;
+}
+
+export interface GetOrderStatusResult {
+  orderId: string;
+  owner: string;
+  token: string;
+  tokenSymbol: string;
+  side: string;
+  tick: number;
+  price: string;
+  amount: string;
+  filled: string;
+  remaining: string;
+  fillPercent: string;
+  status: string;
+  isFlip: boolean;
+}

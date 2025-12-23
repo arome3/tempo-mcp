@@ -31,6 +31,10 @@ export default defineConfig({
       concurrent: false,
     },
 
+    // Disable parallel file execution - critical for blockchain tests
+    // Multiple files sending transactions from the same wallet cause nonce conflicts
+    fileParallelism: false,
+
     // Don't retry E2E tests - blockchain state changes make retries unreliable
     // Write operations may have succeeded even if the test "failed" (e.g., timeout)
     // Retrying with same nonceKeys after state change causes nonce conflicts
