@@ -40,6 +40,39 @@ function parseFloat(value: string | undefined): number | undefined {
 }
 
 /**
+ * Build token aliases from TEMPO_*_ADDRESS environment variables.
+ *
+ * Supports dynamic token aliases:
+ *   TEMPO_ALPHAUSD_ADDRESS=0x... → { AlphaUSD: '0x...' }
+ *   TEMPO_BETAUSD_ADDRESS=0x...  → { BetaUSD: '0x...' }
+ *   TEMPO_MYTOKEN_ADDRESS=0x...  → { MyToken: '0x...' }
+ *
+ * Token names are converted from SCREAMING_CASE to PascalCase.
+ */
+function buildTokenAliases(env: NodeJS.ProcessEnv): Record<string, string> | undefined {
+  const aliases: Record<string, string> = {};
+  const addressPattern = /^TEMPO_([A-Z0-9]+)_ADDRESS$/;
+
+  for (const [key, value] of Object.entries(env)) {
+    if (!value) continue;
+
+    const match = key.match(addressPattern);
+    if (match) {
+      // Convert ALPHAUSD → AlphaUSD, BETAUSD → BetaUSD, etc.
+      const rawName = match[1];
+      const tokenName = rawName
+        .toLowerCase()
+        .replace(/^([a-z])/, (c) => c.toUpperCase()) // Capitalize first letter
+        .replace(/usd$/i, 'USD'); // Ensure USD suffix is uppercase
+
+      aliases[tokenName] = value;
+    }
+  }
+
+  return Object.keys(aliases).length > 0 ? aliases : undefined;
+}
+
+/**
  * Load configuration from environment variables.
  *
  * Supported environment variables:
@@ -143,9 +176,7 @@ export function loadFromEnv(): Record<string, unknown> {
 
     tokens: {
       default: env.TEMPO_DEFAULT_TOKEN,
-      aliases: env.TEMPO_ALPHAUSD_ADDRESS
-        ? { AlphaUSD: env.TEMPO_ALPHAUSD_ADDRESS }
-        : undefined,
+      aliases: buildTokenAliases(env),
     },
 
     logging: {

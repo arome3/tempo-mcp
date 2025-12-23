@@ -139,7 +139,59 @@ export const TIP20_ABI = [
     ],
     outputs: [],
   },
+  // =========================================================================
+  //                      TIP-20 Errors
+  // =========================================================================
+  {
+    name: 'Unauthorized',
+    type: 'error',
+    inputs: [],
+  },
+  {
+    name: 'InsufficientBalance',
+    type: 'error',
+    inputs: [
+      { name: 'available', type: 'uint256' },
+      { name: 'required', type: 'uint256' },
+      { name: 'token', type: 'address' },
+    ],
+  },
+  {
+    name: 'ContractPaused',
+    type: 'error',
+    inputs: [],
+  },
+  {
+    name: 'SupplyCapExceeded',
+    type: 'error',
+    inputs: [],
+  },
+  {
+    name: 'InvalidRecipient',
+    type: 'error',
+    inputs: [],
+  },
+  {
+    name: 'InvalidAmount',
+    type: 'error',
+    inputs: [],
+  },
+  {
+    name: 'PolicyForbids',
+    type: 'error',
+    inputs: [],
+  },
 ] as const;
+
+/**
+ * Known TIP-20 error signatures for better error messages.
+ * keccak256 of error signature, first 4 bytes.
+ */
+export const TIP20_ERROR_SIGNATURES: Record<string, string> = {
+  '0x82b42900': 'Unauthorized - caller does not have the required role (e.g., ISSUER_ROLE for minting)',
+  '0x': 'InsufficientBalance',
+  // Add more as discovered
+} as const;
 
 // =============================================================================
 // TIP-20 Factory ABI

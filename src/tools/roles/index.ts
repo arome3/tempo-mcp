@@ -473,7 +473,9 @@ function registerGetRoleMembersTool(): void {
       title: 'Get Role Members',
       description:
         'Get all addresses that have a specific role on a TIP-20 token. ' +
-        'This is a read-only query with no gas cost.',
+        'This is a read-only query with no gas cost. ' +
+        'Note: Some tokens may not support role enumeration (IAccessControlEnumerable). ' +
+        'Use has_role to check if a specific address has a role.',
       inputSchema: getRoleMembersInputSchema,
     },
     async (args: GetRoleMembersInput) => {

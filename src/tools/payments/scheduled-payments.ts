@@ -30,6 +30,7 @@ import {
   createScheduleErrorResponse,
   createCancelSuccessResponse,
   createCancelErrorResponse,
+  normalizeDatetime,
   type SchedulePaymentInput,
   type CancelScheduledPaymentInput,
 } from './schedule-schemas.js';
@@ -138,9 +139,22 @@ export function registerSchedulePaymentTool(): void {
 
       try {
         // =====================================================================
-        // 1. Validate Execution Time
+        // 1. Validate and Normalize Datetime Fields
         // =====================================================================
-        const executeAt = new Date(args.executeAt);
+        // Use normalizeDatetime to catch invalid dates like "2025-12-45" that
+        // JavaScript's Date would auto-correct to "2026-01-14"
+        let normalizedExecuteAt: string;
+        try {
+          normalizedExecuteAt = normalizeDatetime(args.executeAt);
+        } catch (e) {
+          throw ValidationError.custom(
+            'executeAt',
+            e instanceof Error ? e.message : 'Invalid datetime format',
+            args.executeAt
+          );
+        }
+
+        const executeAt = new Date(normalizedExecuteAt);
         const now = new Date();
 
         if (executeAt <= now) {
@@ -152,8 +166,32 @@ export function registerSchedulePaymentTool(): void {
         }
 
         // Validate validFrom/validUntil if provided
-        const validFrom = args.validFrom ? new Date(args.validFrom) : undefined;
-        const validUntil = args.validUntil ? new Date(args.validUntil) : undefined;
+        let validFrom: Date | undefined;
+        let validUntil: Date | undefined;
+
+        if (args.validFrom) {
+          try {
+            validFrom = new Date(normalizeDatetime(args.validFrom));
+          } catch (e) {
+            throw ValidationError.custom(
+              'validFrom',
+              e instanceof Error ? e.message : 'Invalid datetime format',
+              args.validFrom
+            );
+          }
+        }
+
+        if (args.validUntil) {
+          try {
+            validUntil = new Date(normalizeDatetime(args.validUntil));
+          } catch (e) {
+            throw ValidationError.custom(
+              'validUntil',
+              e instanceof Error ? e.message : 'Invalid datetime format',
+              args.validUntil
+            );
+          }
+        }
 
         if (validFrom && validFrom > executeAt) {
           throw ValidationError.custom(
@@ -169,6 +207,19 @@ export function registerSchedulePaymentTool(): void {
             'validUntil cannot be before executeAt',
             args.validUntil
           );
+        }
+
+        // Validate recurring.endDate if provided
+        if (args.recurring?.endDate) {
+          try {
+            normalizeDatetime(args.recurring.endDate);
+          } catch (e) {
+            throw ValidationError.custom(
+              'recurring.endDate',
+              e instanceof Error ? e.message : 'Invalid datetime format',
+              args.recurring.endDate
+            );
+          }
         }
 
         // =====================================================================
