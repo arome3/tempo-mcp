@@ -14,11 +14,12 @@ TIP-403 is Tempo's on-chain compliance infrastructure that enables:
 
 This example includes:
 
-1. **Policy Information** - Query policy details (type, owner, token count)
-2. **Transfer Compliance** - Check if transfers are allowed before sending
-3. **Whitelist Management** - Add/remove addresses from whitelist
-4. **Blacklist Checks** - Verify if addresses are blocked
-5. **Compliance Reports** - Generate status reports for multiple addresses
+1. **Policy Creation** - Create new whitelist or blacklist policies
+2. **Policy Information** - Query policy details (type, owner, token count)
+3. **Transfer Compliance** - Check if transfers are allowed before sending
+4. **Whitelist Management** - Add/remove addresses from whitelist
+5. **Blacklist Checks** - Verify if addresses are blocked
+6. **Compliance Reports** - Generate status reports for multiple addresses
 
 ## Prerequisites
 
@@ -53,6 +54,23 @@ Run the main demo to see all features:
 ```bash
 npm start
 ```
+
+### Create a Policy
+
+Create a new whitelist or blacklist policy:
+
+```bash
+# Create an empty whitelist policy
+npm run create-policy -- whitelist
+
+# Create a blacklist policy with initial blocked addresses
+npm run create-policy -- blacklist --accounts 0xABC...123 0xDEF...456
+
+# Create a whitelist policy with pre-approved addresses
+npm run create-policy -- whitelist --accounts 0xABC...123
+```
+
+The command returns the new policy ID which you can use with other tools.
 
 ### Check Transfer Compliance
 
@@ -97,6 +115,7 @@ This example uses the following tempo-mcp tools:
 
 | Tool | Description |
 |------|-------------|
+| `create_policy` | Create a new whitelist or blacklist policy |
 | `get_policy_info` | Get policy details by ID |
 | `check_transfer_compliance` | Pre-validate transfers |
 | `is_whitelisted` | Check whitelist status |

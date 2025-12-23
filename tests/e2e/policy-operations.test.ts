@@ -275,6 +275,10 @@ describeE2E('E2E: Policy Read Operations', () => {
 // =============================================================================
 
 describeE2EWrite('E2E: Policy Write Operations', () => {
+  // Track created policy IDs for cleanup/testing
+  let createdWhitelistPolicyId: number | null = null;
+  let createdBlacklistPolicyId: number | null = null;
+
   beforeAll(async () => {
     if (!shouldRunE2EWrite()) {
       return;
@@ -312,6 +316,110 @@ describeE2EWrite('E2E: Policy Write Operations', () => {
       console.log(`\n  Wallet Address: ${state.walletAddress}`);
       console.log(`  Note: Could not verify policy ownership`);
     }
+  });
+
+  // ===========================================================================
+  // Policy Creation Tests
+  // ===========================================================================
+
+  describe('Policy Creation', () => {
+    it('should create a new whitelist policy', async () => {
+      const service = getPolicyService();
+
+      try {
+        const result = await service.createPolicy('whitelist');
+
+        expect(result.hash).toBeDefined();
+        expect(result.hash).toMatch(/^0x[a-fA-F0-9]{64}$/);
+        expect(result.blockNumber).toBeGreaterThan(0);
+        expect(result.policyId).toBeGreaterThanOrEqual(2); // Custom policies start at 2
+
+        createdWhitelistPolicyId = result.policyId;
+
+        console.log(`  TX Hash: ${result.hash}`);
+        console.log(`  Block: ${result.blockNumber}`);
+        console.log(`  Created Policy ID: ${result.policyId}`);
+        console.log(`  Gas Cost: ${result.gasCost}`);
+
+        // Verify the policy was created with correct type
+        const policyInfo = await service.getPolicy(result.policyId);
+        expect(policyInfo.policyType).toBe('whitelist');
+        expect(policyInfo.owner.toLowerCase()).toBe(state.walletAddress!.toLowerCase());
+
+        console.log(`  Verified Policy Type: ${policyInfo.policyType}`);
+        console.log(`  Verified Owner: ${policyInfo.owner}`);
+      } catch (error) {
+        console.log(`  Error creating whitelist policy: ${(error as Error).message}`);
+        throw error;
+      }
+    }, E2E_CONFIG.longTimeout);
+
+    it('should create a new blacklist policy with initial accounts', async () => {
+      const service = getPolicyService();
+      const initialBlacklistedAddress = '0x0000000000000000000000000000000000000Bad' as Address;
+
+      try {
+        const result = await service.createPolicyWithAccounts(
+          'blacklist',
+          [initialBlacklistedAddress]
+        );
+
+        expect(result.hash).toBeDefined();
+        expect(result.hash).toMatch(/^0x[a-fA-F0-9]{64}$/);
+        expect(result.blockNumber).toBeGreaterThan(0);
+        expect(result.policyId).toBeGreaterThanOrEqual(2);
+
+        createdBlacklistPolicyId = result.policyId;
+
+        console.log(`  TX Hash: ${result.hash}`);
+        console.log(`  Block: ${result.blockNumber}`);
+        console.log(`  Created Policy ID: ${result.policyId}`);
+        console.log(`  Initial blacklisted: ${initialBlacklistedAddress}`);
+
+        // Verify the policy was created with correct type
+        const policyInfo = await service.getPolicy(result.policyId);
+        expect(policyInfo.policyType).toBe('blacklist');
+
+        // Verify the initial account is blacklisted
+        const isBlacklisted = await service.isBlacklisted(result.policyId, initialBlacklistedAddress);
+        expect(isBlacklisted).toBe(true);
+
+        console.log(`  Verified Policy Type: ${policyInfo.policyType}`);
+        console.log(`  Verified ${initialBlacklistedAddress} is blacklisted: ${isBlacklisted}`);
+      } catch (error) {
+        console.log(`  Error creating blacklist policy: ${(error as Error).message}`);
+        throw error;
+      }
+    }, E2E_CONFIG.longTimeout);
+
+    it('should be able to add to created whitelist policy', async () => {
+      if (!createdWhitelistPolicyId) {
+        console.log('  Skipped: No whitelist policy was created');
+        return;
+      }
+
+      const service = getPolicyService();
+      const testAddress = '0x0000000000000000000000000000000000000123' as Address;
+
+      try {
+        const result = await service.addToWhitelist(createdWhitelistPolicyId, testAddress);
+
+        expect(result.hash).toBeDefined();
+        expect(result.blockNumber).toBeGreaterThan(0);
+
+        console.log(`  TX Hash: ${result.hash}`);
+        console.log(`  Added ${testAddress} to policy ${createdWhitelistPolicyId}`);
+
+        // Verify address is now whitelisted
+        const isWhitelisted = await service.isWhitelisted(createdWhitelistPolicyId, testAddress);
+        expect(isWhitelisted).toBe(true);
+
+        console.log(`  Verified whitelisted: ${isWhitelisted}`);
+      } catch (error) {
+        console.log(`  Error: ${(error as Error).message}`);
+        throw error;
+      }
+    }, E2E_CONFIG.longTimeout);
   });
 
   // ===========================================================================

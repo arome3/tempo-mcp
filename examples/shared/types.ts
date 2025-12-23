@@ -570,6 +570,25 @@ export interface BurnBlockedTokensResult {
   error?: ErrorDetails;
 }
 
+export interface CreatePolicyInput {
+  policyType: 'whitelist' | 'blacklist';
+  admin?: string;
+  initialAccounts?: string[];
+}
+
+export interface CreatePolicyResult {
+  success: boolean;
+  policyId?: number;
+  policyType?: 'whitelist' | 'blacklist';
+  admin?: string;
+  transactionHash?: string;
+  blockNumber?: number;
+  gasCost?: string;
+  explorerUrl?: string;
+  timestamp?: string;
+  error?: ErrorDetails;
+}
+
 // =============================================================================
 // Fee Sponsorship Types
 // =============================================================================

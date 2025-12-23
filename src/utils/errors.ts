@@ -488,6 +488,7 @@ export const NetworkErrorCodes = {
   RPC_CONNECTION_FAILED: 4001,
   RPC_REQUEST_FAILED: 4002,
   RPC_TIMEOUT: 4003,
+  RPC_SERVER_UNAVAILABLE: 4004,
 } as const;
 
 /**
@@ -540,6 +541,31 @@ export class NetworkError extends TempoMcpError {
         received: `Timeout after ${timeoutMs}ms`,
         suggestion:
           'Check network connectivity. The RPC endpoint may be slow or unresponsive.',
+      },
+      cause
+    );
+  }
+
+  static rpcUnavailable(rpcUrl: string, statusCode: number, cause?: Error): NetworkError {
+    const statusMessages: Record<number, string> = {
+      500: 'Internal server error',
+      502: 'Bad gateway',
+      503: 'Service unavailable',
+      521: 'Web server is down',
+      522: 'Connection timed out',
+      523: 'Origin is unreachable',
+      524: 'A timeout occurred',
+    };
+
+    const statusMessage = statusMessages[statusCode] || `HTTP ${statusCode}`;
+
+    return new NetworkError(
+      NetworkErrorCodes.RPC_SERVER_UNAVAILABLE,
+      `RPC server unavailable: ${statusMessage}`,
+      {
+        received: `${rpcUrl} returned HTTP ${statusCode}`,
+        suggestion:
+          'The Tempo network RPC is temporarily unavailable. Please try again in a few minutes.',
       },
       cause
     );
@@ -659,6 +685,21 @@ export function normalizeError(error: unknown): TempoMcpError {
   }
 
   if (error instanceof Error) {
+    // Check for RPC HTTP errors (5xx status codes)
+    const rpcErrorMatch = error.message.match(
+      /HTTP request failed\.\s*\n\s*Status:\s*(\d+)\s*\n\s*URL:\s*(https?:\/\/[^\s\n]+)/
+    );
+
+    if (rpcErrorMatch) {
+      const statusCode = parseInt(rpcErrorMatch[1], 10);
+      const rpcUrl = rpcErrorMatch[2];
+
+      // Handle 5xx server errors
+      if (statusCode >= 500 && statusCode < 600) {
+        return NetworkError.rpcUnavailable(rpcUrl, statusCode, error);
+      }
+    }
+
     return InternalError.unexpected(error.message, error);
   }
 

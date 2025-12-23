@@ -53,12 +53,60 @@ const accountAddressSchema = z
 const policyIdSchema = z
   .number()
   .int()
-  .min(1)
-  .describe('Policy ID in the TIP-403 registry');
+  .min(0)
+  .describe('Policy ID in TIP-403 registry. Built-in: 0 (always reject), 1 (always allow). Custom policies start at 2.');
 
 const policyTypeSchema = z
   .enum(POLICY_TYPES)
   .describe('Policy type: whitelist, blacklist, or none');
+
+// =============================================================================
+// create_policy Schemas
+// =============================================================================
+
+/**
+ * Input schema for the create_policy tool.
+ */
+export const createPolicyInputSchema = {
+  policyType: z
+    .enum(['whitelist', 'blacklist'])
+    .describe(
+      'Type of policy to create. "whitelist" allows only approved addresses. "blacklist" blocks specific addresses.'
+    ),
+  admin: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid address format')
+    .optional()
+    .describe(
+      'Admin address for the policy (defaults to caller). The admin can modify whitelist/blacklist entries.'
+    ),
+  initialAccounts: z
+    .array(z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid address format'))
+    .optional()
+    .describe(
+      'Optional list of addresses to pre-populate the policy with. For whitelist: these addresses will be allowed. For blacklist: these addresses will be blocked.'
+    ),
+};
+
+export const createPolicyInputZodSchema = z.object(createPolicyInputSchema);
+export type CreatePolicyInput = z.infer<typeof createPolicyInputZodSchema>;
+
+/**
+ * Output schema for successful create_policy response.
+ */
+export const createPolicyOutputSchema = z.object({
+  success: z.literal(true),
+  policyId: z.number(),
+  policyType: policyTypeSchema,
+  admin: z.string(),
+  transactionHash: z.string(),
+  blockNumber: z.number(),
+  gasCost: z.string(),
+  explorerUrl: z.string(),
+  timestamp: z.string(),
+});
+
+export type CreatePolicyOutput = z.infer<typeof createPolicyOutputSchema>;
 
 // =============================================================================
 // check_transfer_compliance Schemas
@@ -407,6 +455,25 @@ export type PolicyOperationError = z.infer<typeof policyOperationErrorSchema>;
 // =============================================================================
 // Helper Functions
 // =============================================================================
+
+/**
+ * Create a success response for create_policy.
+ */
+export function createCreatePolicyResponse(data: {
+  policyId: number;
+  policyType: 'whitelist' | 'blacklist';
+  admin: string;
+  transactionHash: string;
+  blockNumber: number;
+  gasCost: string;
+  explorerUrl: string;
+}): CreatePolicyOutput {
+  return {
+    success: true,
+    ...data,
+    timestamp: new Date().toISOString(),
+  };
+}
 
 /**
  * Create a response for check_transfer_compliance.

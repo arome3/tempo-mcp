@@ -12,7 +12,7 @@
  * Policy Registry Contract: 0x403c000000000000000000000000000000000000
  */
 
-import { type Address, type Hash, formatUnits } from 'viem';
+import { type Address, type Hash, formatUnits, decodeEventLog } from 'viem';
 import { getTempoClient, type TempoPublicClient } from './tempo-client.js';
 import { InternalError, BlockchainError } from '../utils/errors.js';
 
@@ -33,11 +33,12 @@ export type PolicyType = 'whitelist' | 'blacklist' | 'none';
 
 /**
  * Policy type numeric values from contract.
+ * Per TIP-403 spec: enum PolicyType { WHITELIST, BLACKLIST }
+ * So: 0 = whitelist, 1 = blacklist
  */
 export const POLICY_TYPE_VALUES: Record<number, PolicyType> = {
-  0: 'none',
-  1: 'whitelist',
-  2: 'blacklist',
+  0: 'whitelist',
+  1: 'blacklist',
 };
 
 // =============================================================================
@@ -46,7 +47,12 @@ export const POLICY_TYPE_VALUES: Record<number, PolicyType> = {
 
 /**
  * TIP-403 Policy Registry ABI.
- * Used for compliance checks and list management.
+ * Based on the TIP-403 specification at https://docs.tempo.xyz/protocol/tip403/spec
+ *
+ * Built-in policies:
+ * - policyId = 0: Always rejects transfers
+ * - policyId = 1: Always allows transfers (default for new tokens)
+ * - Custom policies start at policyId = 2
  */
 export const POLICY_REGISTRY_ABI = [
   // Check if a transfer is allowed by policy
@@ -61,83 +67,112 @@ export const POLICY_REGISTRY_ABI = [
     ],
     outputs: [{ name: '', type: 'bool' }],
   },
-  // Check if address is on whitelist
+  // Check if an address is authorized under a policy
   {
-    name: 'isWhitelisted',
+    name: 'isAuthorized',
     type: 'function',
     stateMutability: 'view',
     inputs: [
-      { name: 'policyId', type: 'uint256' },
-      { name: 'account', type: 'address' },
+      { name: 'policyId', type: 'uint64' },
+      { name: 'user', type: 'address' },
     ],
     outputs: [{ name: '', type: 'bool' }],
   },
-  // Check if address is on blacklist
+  // Get policy data (type and admin)
   {
-    name: 'isBlacklisted',
+    name: 'policyData',
     type: 'function',
     stateMutability: 'view',
-    inputs: [
-      { name: 'policyId', type: 'uint256' },
-      { name: 'account', type: 'address' },
-    ],
-    outputs: [{ name: '', type: 'bool' }],
-  },
-  // Get policy details
-  {
-    name: 'getPolicy',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'policyId', type: 'uint256' }],
+    inputs: [{ name: 'policyId', type: 'uint64' }],
     outputs: [
       { name: 'policyType', type: 'uint8' },
-      { name: 'owner', type: 'address' },
-      { name: 'tokenCount', type: 'uint256' },
+      { name: 'admin', type: 'address' },
     ],
   },
-  // Add address to whitelist
+  // Check if a policy exists
   {
-    name: 'addToWhitelist',
+    name: 'policyExists',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [{ name: 'policyId', type: 'uint64' }],
+    outputs: [{ name: '', type: 'bool' }],
+  },
+  // Get the next available policy ID
+  {
+    name: 'policyIdCounter',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint64' }],
+  },
+  // Create a new empty policy
+  {
+    name: 'createPolicy',
     type: 'function',
     stateMutability: 'nonpayable',
     inputs: [
-      { name: 'policyId', type: 'uint256' },
-      { name: 'account', type: 'address' },
+      { name: 'admin', type: 'address' },
+      { name: 'policyType', type: 'uint8' },
     ],
-    outputs: [],
+    outputs: [{ name: 'policyId', type: 'uint64' }],
   },
-  // Remove address from whitelist
+  // Create a policy with initial accounts
   {
-    name: 'removeFromWhitelist',
+    name: 'createPolicyWithAccounts',
     type: 'function',
     stateMutability: 'nonpayable',
     inputs: [
-      { name: 'policyId', type: 'uint256' },
-      { name: 'account', type: 'address' },
+      { name: 'admin', type: 'address' },
+      { name: 'policyType', type: 'uint8' },
+      { name: 'accounts', type: 'address[]' },
     ],
-    outputs: [],
+    outputs: [{ name: 'policyId', type: 'uint64' }],
   },
-  // Add address to blacklist (block)
+  // Set a new admin for a policy
   {
-    name: 'addToBlacklist',
+    name: 'setPolicyAdmin',
     type: 'function',
     stateMutability: 'nonpayable',
     inputs: [
-      { name: 'policyId', type: 'uint256' },
-      { name: 'account', type: 'address' },
+      { name: 'policyId', type: 'uint64' },
+      { name: 'admin', type: 'address' },
     ],
     outputs: [],
   },
-  // Remove address from blacklist (unblock)
+  // Modify whitelist entry (add/remove)
   {
-    name: 'removeFromBlacklist',
+    name: 'modifyPolicyWhitelist',
     type: 'function',
     stateMutability: 'nonpayable',
     inputs: [
-      { name: 'policyId', type: 'uint256' },
+      { name: 'policyId', type: 'uint64' },
       { name: 'account', type: 'address' },
+      { name: 'allowed', type: 'bool' },
     ],
     outputs: [],
+  },
+  // Modify blacklist entry (add/remove)
+  {
+    name: 'modifyPolicyBlacklist',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'policyId', type: 'uint64' },
+      { name: 'account', type: 'address' },
+      { name: 'restricted', type: 'bool' },
+    ],
+    outputs: [],
+  },
+  // Error definitions
+  {
+    name: 'Unauthorized',
+    type: 'error',
+    inputs: [],
+  },
+  {
+    name: 'IncompatiblePolicyType',
+    type: 'error',
+    inputs: [],
   },
   // Events
   {
@@ -170,6 +205,16 @@ export const POLICY_REGISTRY_ABI = [
     inputs: [
       { name: 'policyId', type: 'uint256', indexed: true },
       { name: 'account', type: 'address', indexed: true },
+    ],
+  },
+  // PolicyCreated event - emitted when a new policy is created
+  {
+    name: 'PolicyCreated',
+    type: 'event',
+    inputs: [
+      { name: 'policyId', type: 'uint64', indexed: true },
+      { name: 'updater', type: 'address', indexed: true },
+      { name: 'policyType', type: 'uint8', indexed: false },
     ],
   },
 ] as const;
@@ -411,43 +456,101 @@ export class PolicyService {
   }
 
   // ===========================================================================
-  // Whitelist Query Methods
+  // Authorization Query Methods
   // ===========================================================================
 
   /**
+   * Check if an address is authorized under a policy.
+   *
+   * Uses TIP-403's isAuthorized function which checks:
+   * - For whitelist policies: returns true if address is ON the whitelist
+   * - For blacklist policies: returns true if address is NOT on the blacklist
+   *
+   * @param policyId - Policy ID in the TIP-403 registry
+   * @param account - Address to check
+   * @returns True if address is authorized
+   * @throws Error if policy doesn't exist
+   */
+  async isAuthorized(policyId: number, account: Address): Promise<boolean> {
+    try {
+      const result = await this.publicClient.readContract({
+        address: POLICY_REGISTRY_ADDRESS,
+        abi: POLICY_REGISTRY_ABI,
+        functionName: 'isAuthorized',
+        args: [BigInt(policyId), account],
+      });
+
+      return result as boolean;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('0xaa4bc69a') || errorMessage.includes('Unauthorized')) {
+        throw new Error(`Policy ID ${policyId} does not exist.`);
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Check if an address is on the whitelist for a policy.
+   *
+   * For whitelist policies: returns isAuthorized result
+   * For blacklist/none policies: always returns false (not a whitelist)
    *
    * @param policyId - Policy ID in the TIP-403 registry
    * @param account - Address to check
    * @returns True if address is whitelisted
    */
   async isWhitelisted(policyId: number, account: Address): Promise<boolean> {
-    const result = await this.publicClient.readContract({
-      address: POLICY_REGISTRY_ADDRESS,
-      abi: POLICY_REGISTRY_ABI,
-      functionName: 'isWhitelisted',
-      args: [BigInt(policyId), account],
-    });
+    try {
+      // Get policy type first
+      const policy = await this.getPolicy(policyId);
 
-    return result as boolean;
+      // Only whitelist policies have whitelists
+      if (policy.policyType !== 'whitelist') {
+        return false;
+      }
+
+      // For whitelist policies, isAuthorized = isWhitelisted
+      return await this.isAuthorized(policyId, account);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('does not exist')) {
+        throw error;
+      }
+      throw error;
+    }
   }
 
   /**
    * Check if an address is on the blacklist for a policy.
+   *
+   * For blacklist policies: returns !isAuthorized (blocked = not authorized)
+   * For whitelist/none policies: always returns false (not a blacklist)
    *
    * @param policyId - Policy ID in the TIP-403 registry
    * @param account - Address to check
    * @returns True if address is blacklisted
    */
   async isBlacklisted(policyId: number, account: Address): Promise<boolean> {
-    const result = await this.publicClient.readContract({
-      address: POLICY_REGISTRY_ADDRESS,
-      abi: POLICY_REGISTRY_ABI,
-      functionName: 'isBlacklisted',
-      args: [BigInt(policyId), account],
-    });
+    try {
+      // Get policy type first
+      const policy = await this.getPolicy(policyId);
 
-    return result as boolean;
+      // Only blacklist policies have blacklists
+      if (policy.policyType !== 'blacklist') {
+        return false;
+      }
+
+      // For blacklist policies, !isAuthorized = isBlacklisted
+      const authorized = await this.isAuthorized(policyId, account);
+      return !authorized;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (errorMessage.includes('does not exist')) {
+        throw error;
+      }
+      throw error;
+    }
   }
 
   // ===========================================================================
@@ -457,25 +560,86 @@ export class PolicyService {
   /**
    * Get policy information by ID.
    *
+   * Built-in policies:
+   * - policyId = 0: Always rejects transfers
+   * - policyId = 1: Always allows transfers (default for new tokens)
+   * - Custom policies start at policyId = 2
+   *
    * @param policyId - Policy ID in the TIP-403 registry
-   * @returns Policy details including type, owner, and token count
+   * @returns Policy details including type and admin
+   * @throws Error if policy doesn't exist
    */
   async getPolicy(policyId: number): Promise<PolicyInfo> {
-    const result = await this.publicClient.readContract({
-      address: POLICY_REGISTRY_ADDRESS,
-      abi: POLICY_REGISTRY_ABI,
-      functionName: 'getPolicy',
-      args: [BigInt(policyId)],
-    });
+    try {
+      // First check if policy exists
+      const exists = await this.publicClient.readContract({
+        address: POLICY_REGISTRY_ADDRESS,
+        abi: POLICY_REGISTRY_ABI,
+        functionName: 'policyExists',
+        args: [BigInt(policyId)],
+      });
 
-    const [policyTypeNum, owner, tokenCount] = result as [number, Address, bigint];
+      if (!exists) {
+        // Built-in policies (0 and 1) always exist but may not show via policyExists
+        if (policyId === 0) {
+          return {
+            policyId: 0,
+            policyType: 'none',
+            owner: '0x0000000000000000000000000000000000000000' as Address,
+            tokenCount: 0,
+          };
+        }
+        if (policyId === 1) {
+          return {
+            policyId: 1,
+            policyType: 'none',
+            owner: '0x0000000000000000000000000000000000000000' as Address,
+            tokenCount: 0,
+          };
+        }
+        throw new Error(
+          `Policy ID ${policyId} does not exist. Custom policies start at ID 2. Use policyId=0 (always reject) or policyId=1 (always allow) for built-in policies.`
+        );
+      }
 
-    return {
-      policyId,
-      policyType: POLICY_TYPE_VALUES[policyTypeNum] || 'none',
-      owner,
-      tokenCount: Number(tokenCount),
-    };
+      // Get policy data
+      const result = await this.publicClient.readContract({
+        address: POLICY_REGISTRY_ADDRESS,
+        abi: POLICY_REGISTRY_ABI,
+        functionName: 'policyData',
+        args: [BigInt(policyId)],
+      });
+
+      const [policyTypeNum, admin] = result as [number, Address];
+
+      return {
+        policyId,
+        policyType: POLICY_TYPE_VALUES[policyTypeNum] || 'none',
+        owner: admin,
+        tokenCount: 0, // tokenCount not available in policyData
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      // Check for Tempo's Unauthorized error (0xaa4bc69a)
+      if (errorMessage.includes('0xaa4bc69a') || errorMessage.includes('Unauthorized')) {
+        throw new Error(
+          `Policy ID ${policyId} does not exist. Custom policies start at ID 2. Built-in: 0 (always reject), 1 (always allow).`
+        );
+      }
+      // Check for arithmetic overflow - known contract bug with whitelist policies
+      if (
+        errorMessage.includes('underflow or overflow') ||
+        errorMessage.includes('0x4e487b71') ||
+        errorMessage.includes('panic')
+      ) {
+        throw new Error(
+          `Unable to read policy ${policyId}. This may be a whitelist policy affected by a known contract issue. ` +
+            `The policy exists and can be used with add_to_whitelist/is_whitelisted tools, but policyData() fails. ` +
+            `Try using is_whitelisted to verify the policy type.`
+        );
+      }
+      throw error;
+    }
   }
 
   /**
@@ -531,13 +695,197 @@ export class PolicyService {
   }
 
   // ===========================================================================
+  // Policy Creation Methods
+  // ===========================================================================
+
+  /**
+   * Create a new TIP-403 policy.
+   *
+   * Creates an empty policy that can be configured with whitelist/blacklist entries.
+   * The caller becomes the policy admin.
+   *
+   * @param policyType - Type of policy: 'whitelist' or 'blacklist'
+   * @param admin - Admin address for the policy (defaults to caller)
+   * @returns Transaction result with the new policy ID
+   * @throws Error if wallet not configured or transaction fails
+   */
+  async createPolicy(
+    policyType: 'whitelist' | 'blacklist',
+    admin?: Address
+  ): Promise<PolicyOperationResult & { policyId: number }> {
+    const walletClient = this.client['walletClient'];
+    if (!walletClient) {
+      throw InternalError.walletNotConfigured();
+    }
+
+    // Convert policy type to numeric value per TIP-403: enum { WHITELIST=0, BLACKLIST=1 }
+    const policyTypeNum = policyType === 'whitelist' ? 0 : 1;
+
+    // Default admin to caller if not specified
+    const adminAddress = admin || this.client.getAddress();
+
+    try {
+      const hash = await walletClient.writeContract({
+        address: POLICY_REGISTRY_ADDRESS,
+        abi: POLICY_REGISTRY_ABI,
+        functionName: 'createPolicy',
+        args: [adminAddress, policyTypeNum],
+        feeToken: this.feeToken,
+      } as Parameters<typeof walletClient.writeContract>[0]);
+
+      const receipt = await this.client.waitForTransaction(hash);
+
+      // Extract policyId from the PolicyCreated event in transaction logs
+      // This is more reliable than reading policyIdCounter which can race
+      let createdPolicyId: number | undefined;
+
+      for (const log of receipt.logs) {
+        try {
+          const decoded = decodeEventLog({
+            abi: POLICY_REGISTRY_ABI,
+            data: log.data,
+            topics: log.topics,
+          });
+
+          if (decoded.eventName === 'PolicyCreated') {
+            createdPolicyId = Number((decoded.args as { policyId: bigint }).policyId);
+            break;
+          }
+        } catch {
+          // Not a PolicyCreated event, continue
+        }
+      }
+
+      // Fallback to policyIdCounter if event parsing fails (shouldn't happen)
+      if (createdPolicyId === undefined) {
+        const nextId = await this.publicClient.readContract({
+          address: POLICY_REGISTRY_ADDRESS,
+          abi: POLICY_REGISTRY_ABI,
+          functionName: 'policyIdCounter',
+          args: [],
+        });
+        createdPolicyId = Number(nextId) - 1;
+      }
+
+      return {
+        hash,
+        blockNumber: Number(receipt.blockNumber),
+        gasCost: receipt.gasUsed.toString(),
+        policyId: createdPolicyId,
+      };
+    } catch (error) {
+      const errorMessage = (error as Error).message || '';
+      if (
+        errorMessage.includes('0x82b42900') ||
+        errorMessage.includes('Unauthorized')
+      ) {
+        throw BlockchainError.transactionReverted(
+          'Unauthorized: Failed to create policy.'
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Create a new TIP-403 policy with initial accounts.
+   *
+   * Creates a policy pre-populated with whitelist or blacklist entries.
+   * The caller becomes the policy admin.
+   *
+   * @param policyType - Type of policy: 'whitelist' or 'blacklist'
+   * @param accounts - Initial addresses to add to the policy
+   * @param admin - Admin address for the policy (defaults to caller)
+   * @returns Transaction result with the new policy ID
+   * @throws Error if wallet not configured or transaction fails
+   */
+  async createPolicyWithAccounts(
+    policyType: 'whitelist' | 'blacklist',
+    accounts: Address[],
+    admin?: Address
+  ): Promise<PolicyOperationResult & { policyId: number }> {
+    const walletClient = this.client['walletClient'];
+    if (!walletClient) {
+      throw InternalError.walletNotConfigured();
+    }
+
+    // Convert policy type to numeric value per TIP-403: enum { WHITELIST=0, BLACKLIST=1 }
+    const policyTypeNum = policyType === 'whitelist' ? 0 : 1;
+
+    // Default admin to caller if not specified
+    const adminAddress = admin || this.client.getAddress();
+
+    try {
+      const hash = await walletClient.writeContract({
+        address: POLICY_REGISTRY_ADDRESS,
+        abi: POLICY_REGISTRY_ABI,
+        functionName: 'createPolicyWithAccounts',
+        args: [adminAddress, policyTypeNum, accounts],
+        feeToken: this.feeToken,
+      } as Parameters<typeof walletClient.writeContract>[0]);
+
+      const receipt = await this.client.waitForTransaction(hash);
+
+      // Extract policyId from the PolicyCreated event in transaction logs
+      let createdPolicyId: number | undefined;
+
+      for (const log of receipt.logs) {
+        try {
+          const decoded = decodeEventLog({
+            abi: POLICY_REGISTRY_ABI,
+            data: log.data,
+            topics: log.topics,
+          });
+
+          if (decoded.eventName === 'PolicyCreated') {
+            createdPolicyId = Number((decoded.args as { policyId: bigint }).policyId);
+            break;
+          }
+        } catch {
+          // Not a PolicyCreated event, continue
+        }
+      }
+
+      // Fallback to policyIdCounter if event parsing fails
+      if (createdPolicyId === undefined) {
+        const nextId = await this.publicClient.readContract({
+          address: POLICY_REGISTRY_ADDRESS,
+          abi: POLICY_REGISTRY_ABI,
+          functionName: 'policyIdCounter',
+          args: [],
+        });
+        createdPolicyId = Number(nextId) - 1;
+      }
+
+      return {
+        hash,
+        blockNumber: Number(receipt.blockNumber),
+        gasCost: receipt.gasUsed.toString(),
+        policyId: createdPolicyId,
+      };
+    } catch (error) {
+      const errorMessage = (error as Error).message || '';
+      if (
+        errorMessage.includes('0x82b42900') ||
+        errorMessage.includes('Unauthorized')
+      ) {
+        throw BlockchainError.transactionReverted(
+          'Unauthorized: Failed to create policy.'
+        );
+      }
+      throw error;
+    }
+  }
+
+  // ===========================================================================
   // Whitelist Management Methods
   // ===========================================================================
 
   /**
    * Add an address to a policy's whitelist.
    *
-   * Requires the caller to be the policy admin/owner.
+   * Requires the caller to be the policy admin.
+   * Uses modifyPolicyWhitelist(policyId, account, allowed=true).
    *
    * @param policyId - Policy ID in the TIP-403 registry
    * @param account - Address to add to whitelist
@@ -557,8 +905,8 @@ export class PolicyService {
       const hash = await walletClient.writeContract({
         address: POLICY_REGISTRY_ADDRESS,
         abi: POLICY_REGISTRY_ABI,
-        functionName: 'addToWhitelist',
-        args: [BigInt(policyId), account],
+        functionName: 'modifyPolicyWhitelist',
+        args: [BigInt(policyId), account, true], // allowed = true
         feeToken: this.feeToken,
       } as Parameters<typeof walletClient.writeContract>[0]);
 
@@ -571,13 +919,22 @@ export class PolicyService {
       };
     } catch (error) {
       const errorMessage = (error as Error).message || '';
+      // Check for IncompatiblePolicyType error
+      if (errorMessage.includes('IncompatiblePolicyType')) {
+        throw BlockchainError.transactionReverted(
+          `Policy ${policyId} is not a whitelist policy. Use add_to_blacklist for blacklist policies.`
+        );
+      }
+      // Check for Tempo's Unauthorized error (0x82b42900)
       if (
+        errorMessage.includes('0xaa4bc69a') ||
+        errorMessage.includes('0x82b42900') ||
         errorMessage.includes('Unauthorized') ||
         errorMessage.includes('not owner') ||
         errorMessage.includes('not admin')
       ) {
         throw BlockchainError.transactionReverted(
-          `Access denied: caller is not authorized to modify policy ${policyId}. ${errorMessage}`
+          `Unauthorized: Policy ID ${policyId} may not exist, or caller is not the policy owner.`
         );
       }
       throw error;
@@ -587,7 +944,8 @@ export class PolicyService {
   /**
    * Remove an address from a policy's whitelist.
    *
-   * Requires the caller to be the policy admin/owner.
+   * Requires the caller to be the policy admin.
+   * Uses modifyPolicyWhitelist(policyId, account, allowed=false).
    *
    * @param policyId - Policy ID in the TIP-403 registry
    * @param account - Address to remove from whitelist
@@ -607,8 +965,8 @@ export class PolicyService {
       const hash = await walletClient.writeContract({
         address: POLICY_REGISTRY_ADDRESS,
         abi: POLICY_REGISTRY_ABI,
-        functionName: 'removeFromWhitelist',
-        args: [BigInt(policyId), account],
+        functionName: 'modifyPolicyWhitelist',
+        args: [BigInt(policyId), account, false], // allowed = false
         feeToken: this.feeToken,
       } as Parameters<typeof walletClient.writeContract>[0]);
 
@@ -621,13 +979,22 @@ export class PolicyService {
       };
     } catch (error) {
       const errorMessage = (error as Error).message || '';
+      // Check for IncompatiblePolicyType error
+      if (errorMessage.includes('IncompatiblePolicyType')) {
+        throw BlockchainError.transactionReverted(
+          `Policy ${policyId} is not a whitelist policy. Use remove_from_blacklist for blacklist policies.`
+        );
+      }
+      // Check for Tempo's Unauthorized error (0x82b42900)
       if (
+        errorMessage.includes('0xaa4bc69a') ||
+        errorMessage.includes('0x82b42900') ||
         errorMessage.includes('Unauthorized') ||
         errorMessage.includes('not owner') ||
         errorMessage.includes('not admin')
       ) {
         throw BlockchainError.transactionReverted(
-          `Access denied: caller is not authorized to modify policy ${policyId}. ${errorMessage}`
+          `Unauthorized: Policy ID ${policyId} may not exist, or caller is not the policy owner.`
         );
       }
       throw error;
@@ -641,7 +1008,8 @@ export class PolicyService {
   /**
    * Add an address to a policy's blacklist (block the address).
    *
-   * Requires the caller to be the policy admin/owner.
+   * Requires the caller to be the policy admin.
+   * Uses modifyPolicyBlacklist(policyId, account, restricted=true).
    * This is typically used for sanctions compliance.
    *
    * @param policyId - Policy ID in the TIP-403 registry
@@ -662,8 +1030,8 @@ export class PolicyService {
       const hash = await walletClient.writeContract({
         address: POLICY_REGISTRY_ADDRESS,
         abi: POLICY_REGISTRY_ABI,
-        functionName: 'addToBlacklist',
-        args: [BigInt(policyId), account],
+        functionName: 'modifyPolicyBlacklist',
+        args: [BigInt(policyId), account, true], // restricted = true
         feeToken: this.feeToken,
       } as Parameters<typeof walletClient.writeContract>[0]);
 
@@ -676,13 +1044,22 @@ export class PolicyService {
       };
     } catch (error) {
       const errorMessage = (error as Error).message || '';
+      // Check for IncompatiblePolicyType error
+      if (errorMessage.includes('IncompatiblePolicyType')) {
+        throw BlockchainError.transactionReverted(
+          `Policy ${policyId} is not a blacklist policy. Use add_to_whitelist for whitelist policies.`
+        );
+      }
+      // Check for Tempo's Unauthorized error (0x82b42900)
       if (
+        errorMessage.includes('0xaa4bc69a') ||
+        errorMessage.includes('0x82b42900') ||
         errorMessage.includes('Unauthorized') ||
         errorMessage.includes('not owner') ||
         errorMessage.includes('not admin')
       ) {
         throw BlockchainError.transactionReverted(
-          `Access denied: caller is not authorized to modify policy ${policyId}. ${errorMessage}`
+          `Unauthorized: Policy ID ${policyId} may not exist, or caller is not the policy owner.`
         );
       }
       throw error;
@@ -692,7 +1069,8 @@ export class PolicyService {
   /**
    * Remove an address from a policy's blacklist (unblock the address).
    *
-   * Requires the caller to be the policy admin/owner.
+   * Requires the caller to be the policy admin.
+   * Uses modifyPolicyBlacklist(policyId, account, restricted=false).
    *
    * @param policyId - Policy ID in the TIP-403 registry
    * @param account - Address to remove from blacklist
@@ -712,8 +1090,8 @@ export class PolicyService {
       const hash = await walletClient.writeContract({
         address: POLICY_REGISTRY_ADDRESS,
         abi: POLICY_REGISTRY_ABI,
-        functionName: 'removeFromBlacklist',
-        args: [BigInt(policyId), account],
+        functionName: 'modifyPolicyBlacklist',
+        args: [BigInt(policyId), account, false], // restricted = false
         feeToken: this.feeToken,
       } as Parameters<typeof walletClient.writeContract>[0]);
 
@@ -726,13 +1104,22 @@ export class PolicyService {
       };
     } catch (error) {
       const errorMessage = (error as Error).message || '';
+      // Check for IncompatiblePolicyType error
+      if (errorMessage.includes('IncompatiblePolicyType')) {
+        throw BlockchainError.transactionReverted(
+          `Policy ${policyId} is not a blacklist policy. Use remove_from_whitelist for whitelist policies.`
+        );
+      }
+      // Check for Tempo's Unauthorized error (0x82b42900)
       if (
+        errorMessage.includes('0xaa4bc69a') ||
+        errorMessage.includes('0x82b42900') ||
         errorMessage.includes('Unauthorized') ||
         errorMessage.includes('not owner') ||
         errorMessage.includes('not admin')
       ) {
         throw BlockchainError.transactionReverted(
-          `Access denied: caller is not authorized to modify policy ${policyId}. ${errorMessage}`
+          `Unauthorized: Policy ID ${policyId} may not exist, or caller is not the policy owner.`
         );
       }
       throw error;

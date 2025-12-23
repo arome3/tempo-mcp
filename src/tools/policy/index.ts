@@ -6,6 +6,7 @@
  * and pre-transfer validation.
  *
  * Tools in this category:
+ * - create_policy: Create a new compliance policy (High risk)
  * - check_transfer_compliance: Check if transfer is allowed (Low risk)
  * - get_policy_info: Get policy details (Low risk)
  * - is_whitelisted: Check whitelist status (Low risk)
@@ -31,6 +32,7 @@ import { normalizeError, isTempoMcpError } from '../../utils/errors.js';
 import { createRequestContext } from '../../types/index.js';
 import {
   // Input schemas
+  createPolicyInputSchema,
   checkTransferComplianceInputSchema,
   getPolicyInfoInputSchema,
   isWhitelistedInputSchema,
@@ -41,6 +43,7 @@ import {
   removeFromBlacklistInputSchema,
   burnBlockedTokensInputSchema,
   // Response helpers
+  createCreatePolicyResponse,
   createCheckTransferComplianceResponse,
   createGetPolicyInfoResponse,
   createIsWhitelistedResponse,
@@ -52,6 +55,7 @@ import {
   createBurnBlockedTokensResponse,
   createPolicyErrorResponse,
   // Types
+  type CreatePolicyInput,
   type CheckTransferComplianceInput,
   type GetPolicyInfoInput,
   type IsWhitelistedInput,
@@ -72,6 +76,7 @@ import {
  * Register all policy management tools with the MCP server.
  */
 export function registerPolicyTools(): void {
+  registerCreatePolicyTool();
   registerCheckTransferComplianceTool();
   registerGetPolicyInfoTool();
   registerIsWhitelistedTool();
@@ -81,6 +86,126 @@ export function registerPolicyTools(): void {
   registerAddToBlacklistTool();
   registerRemoveFromBlacklistTool();
   registerBurnBlockedTokensTool();
+}
+
+// =============================================================================
+// create_policy Tool
+// =============================================================================
+
+function registerCreatePolicyTool(): void {
+  server.registerTool(
+    'create_policy',
+    {
+      title: 'Create Policy',
+      description:
+        'Create a new TIP-403 compliance policy. ' +
+        'Policies enable transfer restrictions on tokens. ' +
+        'Choose "whitelist" to only allow approved addresses, or "blacklist" to block specific addresses. ' +
+        'The caller becomes the policy admin who can modify entries. ' +
+        'Returns the new policy ID which can be used with add_to_whitelist/add_to_blacklist.',
+      inputSchema: createPolicyInputSchema,
+    },
+    async (args: CreatePolicyInput) => {
+      const ctx = createRequestContext('create_policy');
+      const config = getConfig();
+      const policyService = getPolicyService();
+      const security = getSecurityLayer();
+
+      const logArgs = {
+        policyType: args.policyType,
+        admin: args.admin,
+        initialAccountsCount: args.initialAccounts?.length ?? 0,
+      };
+
+      try {
+        // Determine admin address
+        const adminAddress = (args.admin || policyService['client'].getAddress()) as Address;
+
+        let result: { hash: string; blockNumber: number; gasCost: string; policyId: number };
+
+        if (args.initialAccounts && args.initialAccounts.length > 0) {
+          // Create policy with initial accounts
+          result = await policyService.createPolicyWithAccounts(
+            args.policyType,
+            args.initialAccounts as Address[],
+            adminAddress
+          );
+        } else {
+          // Create empty policy
+          result = await policyService.createPolicy(args.policyType, adminAddress);
+        }
+
+        // Log success
+        await security.logSuccess({
+          requestId: ctx.requestId,
+          tool: 'create_policy',
+          arguments: logArgs,
+          durationMs: Date.now() - ctx.startTime,
+          transactionHash: result.hash,
+          gasCost: result.gasCost,
+        });
+
+        const output = createCreatePolicyResponse({
+          policyId: result.policyId,
+          policyType: args.policyType,
+          admin: adminAddress,
+          transactionHash: result.hash,
+          blockNumber: result.blockNumber,
+          gasCost: result.gasCost,
+          explorerUrl: buildExplorerTxUrl(config.network.explorerUrl, result.hash),
+        });
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(output, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        const normalized = normalizeError(error);
+        const durationMs = Date.now() - ctx.startTime;
+
+        if (isTempoMcpError(error) && error.name === 'SecurityError') {
+          await security.logRejected({
+            requestId: ctx.requestId,
+            tool: 'create_policy',
+            arguments: logArgs,
+            durationMs,
+            rejectionReason: error.message,
+          });
+        } else {
+          await security.logFailure({
+            requestId: ctx.requestId,
+            tool: 'create_policy',
+            arguments: logArgs,
+            durationMs,
+            errorMessage: normalized.message,
+            errorCode: normalized.code,
+          });
+        }
+
+        const errorOutput = createPolicyErrorResponse({
+          code: normalized.code,
+          message: normalized.message,
+          details: normalized.details,
+          recoverable: normalized.recoverable,
+          retryAfter: normalized.retryAfter,
+        });
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(errorOutput, null, 2),
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
 }
 
 // =============================================================================

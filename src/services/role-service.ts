@@ -89,14 +89,12 @@ export const ACCESS_CONTROL_ABI = [
     outputs: [],
   },
   // Renounce your own role (caller must have the role)
+  // NOTE: Tempo TIP-20 only takes role, not callerConfirmation like OpenZeppelin
   {
     name: 'renounceRole',
     type: 'function',
     stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'role', type: 'bytes32' },
-      { name: 'callerConfirmation', type: 'address' },
-    ],
+    inputs: [{ name: 'role', type: 'bytes32' }],
     outputs: [],
   },
   // Check if an account has a role
@@ -504,14 +502,16 @@ export class RoleService {
         gasCost: receipt.gasUsed.toString(),
       };
     } catch (error) {
-      // Check for common revert reasons
+      // Check for Tempo's Unauthorized error (0x82b42900) or OpenZeppelin's AccessControl errors
       const errorMessage = (error as Error).message || '';
       if (
+        errorMessage.includes('0x82b42900') ||
+        errorMessage.includes('Unauthorized') ||
         errorMessage.includes('AccessControlUnauthorizedAccount') ||
         errorMessage.includes('missing role')
       ) {
         throw BlockchainError.transactionReverted(
-          `Access denied: caller does not have admin role to grant ${roleName}. ${errorMessage}`
+          `Unauthorized: caller does not have admin role (DEFAULT_ADMIN_ROLE) to grant ${roleName}.`
         );
       }
       throw error;
@@ -559,13 +559,16 @@ export class RoleService {
         gasCost: receipt.gasUsed.toString(),
       };
     } catch (error) {
+      // Check for Tempo's Unauthorized error (0x82b42900) or OpenZeppelin's AccessControl errors
       const errorMessage = (error as Error).message || '';
       if (
+        errorMessage.includes('0x82b42900') ||
+        errorMessage.includes('Unauthorized') ||
         errorMessage.includes('AccessControlUnauthorizedAccount') ||
         errorMessage.includes('missing role')
       ) {
         throw BlockchainError.transactionReverted(
-          `Access denied: caller does not have admin role to revoke ${roleName}. ${errorMessage}`
+          `Unauthorized: caller does not have admin role (DEFAULT_ADMIN_ROLE) to revoke ${roleName}.`
         );
       }
       throw error;
@@ -592,15 +595,15 @@ export class RoleService {
       throw InternalError.walletNotConfigured();
     }
 
-    const callerAddress = this.client.getAddress();
     const roleHash = this.getRoleHash(roleName);
 
     try {
+      // NOTE: Tempo TIP-20 renounceRole only takes role, not callerConfirmation
       const hash = await walletClient.writeContract({
         address: tokenAddress,
         abi: ACCESS_CONTROL_ABI,
         functionName: 'renounceRole',
-        args: [roleHash, callerAddress],
+        args: [roleHash],
         feeToken: this.feeToken,
       } as Parameters<typeof walletClient.writeContract>[0]);
 
@@ -613,6 +616,15 @@ export class RoleService {
       };
     } catch (error) {
       const errorMessage = (error as Error).message || '';
+      // Check for Tempo's Unauthorized error (0x82b42900) - caller doesn't have the role
+      if (
+        errorMessage.includes('0x82b42900') ||
+        errorMessage.includes('Unauthorized')
+      ) {
+        throw BlockchainError.transactionReverted(
+          `Unauthorized: caller does not have ${roleName} to renounce.`
+        );
+      }
       if (errorMessage.includes('AccessControlBadConfirmation')) {
         throw BlockchainError.transactionReverted(
           `Cannot renounce role: caller confirmation mismatch. ${errorMessage}`
@@ -681,12 +693,15 @@ export class RoleService {
           `Token is already paused. ${errorMessage}`
         );
       }
+      // Check for Tempo's Unauthorized error (0x82b42900) or OpenZeppelin's AccessControl errors
       if (
+        errorMessage.includes('0x82b42900') ||
+        errorMessage.includes('Unauthorized') ||
         errorMessage.includes('AccessControlUnauthorizedAccount') ||
         errorMessage.includes('missing role')
       ) {
         throw BlockchainError.transactionReverted(
-          `Access denied: caller does not have PAUSE_ROLE. ${errorMessage}`
+          'Unauthorized: caller does not have PAUSE_ROLE. Use grant_role to assign PAUSE_ROLE before pausing.'
         );
       }
       throw error;
@@ -731,12 +746,15 @@ export class RoleService {
           `Token is not paused. ${errorMessage}`
         );
       }
+      // Check for Tempo's Unauthorized error (0x82b42900) or OpenZeppelin's AccessControl errors
       if (
+        errorMessage.includes('0x82b42900') ||
+        errorMessage.includes('Unauthorized') ||
         errorMessage.includes('AccessControlUnauthorizedAccount') ||
         errorMessage.includes('missing role')
       ) {
         throw BlockchainError.transactionReverted(
-          `Access denied: caller does not have UNPAUSE_ROLE. ${errorMessage}`
+          'Unauthorized: caller does not have UNPAUSE_ROLE. Use grant_role to assign UNPAUSE_ROLE before unpausing.'
         );
       }
       throw error;

@@ -8,6 +8,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   // Input schemas
+  createPolicyInputZodSchema,
   checkTransferComplianceInputZodSchema,
   getPolicyInfoInputZodSchema,
   isWhitelistedInputZodSchema,
@@ -18,6 +19,7 @@ import {
   removeFromBlacklistInputZodSchema,
   burnBlockedTokensInputZodSchema,
   // Response helpers
+  createCreatePolicyResponse,
   createCheckTransferComplianceResponse,
   createGetPolicyInfoResponse,
   createIsWhitelistedResponse,
@@ -69,6 +71,105 @@ describe('Policy Schema Constants', () => {
 // =============================================================================
 // Input Schema Tests
 // =============================================================================
+
+describe('createPolicyInputSchema', () => {
+  it('should accept whitelist policy type', () => {
+    const input = {
+      policyType: 'whitelist',
+    };
+
+    const result = createPolicyInputZodSchema.safeParse(input);
+    expect(result.success).toBe(true);
+  });
+
+  it('should accept blacklist policy type', () => {
+    const input = {
+      policyType: 'blacklist',
+    };
+
+    const result = createPolicyInputZodSchema.safeParse(input);
+    expect(result.success).toBe(true);
+  });
+
+  it('should reject invalid policy type', () => {
+    const input = {
+      policyType: 'none',
+    };
+
+    const result = createPolicyInputZodSchema.safeParse(input);
+    expect(result.success).toBe(false);
+  });
+
+  it('should accept optional admin address', () => {
+    const input = {
+      policyType: 'whitelist',
+      admin: TEST_ADDRESSES.VALID,
+    };
+
+    const result = createPolicyInputZodSchema.safeParse(input);
+    expect(result.success).toBe(true);
+  });
+
+  it('should reject invalid admin address', () => {
+    const input = {
+      policyType: 'whitelist',
+      admin: 'invalid-address',
+    };
+
+    const result = createPolicyInputZodSchema.safeParse(input);
+    expect(result.success).toBe(false);
+  });
+
+  it('should accept optional initialAccounts array', () => {
+    const input = {
+      policyType: 'whitelist',
+      initialAccounts: [TEST_ADDRESSES.VALID, TEST_ADDRESSES.VALID_2],
+    };
+
+    const result = createPolicyInputZodSchema.safeParse(input);
+    expect(result.success).toBe(true);
+  });
+
+  it('should accept empty initialAccounts array', () => {
+    const input = {
+      policyType: 'blacklist',
+      initialAccounts: [],
+    };
+
+    const result = createPolicyInputZodSchema.safeParse(input);
+    expect(result.success).toBe(true);
+  });
+
+  it('should reject invalid addresses in initialAccounts', () => {
+    const input = {
+      policyType: 'whitelist',
+      initialAccounts: [TEST_ADDRESSES.VALID, 'invalid-address'],
+    };
+
+    const result = createPolicyInputZodSchema.safeParse(input);
+    expect(result.success).toBe(false);
+  });
+
+  it('should accept all optional fields together', () => {
+    const input = {
+      policyType: 'blacklist',
+      admin: TEST_ADDRESSES.VALID,
+      initialAccounts: [TEST_ADDRESSES.VALID_2, TEST_ADDRESSES.VALID_3],
+    };
+
+    const result = createPolicyInputZodSchema.safeParse(input);
+    expect(result.success).toBe(true);
+  });
+
+  it('should require policyType', () => {
+    const input = {
+      admin: TEST_ADDRESSES.VALID,
+    };
+
+    const result = createPolicyInputZodSchema.safeParse(input);
+    expect(result.success).toBe(false);
+  });
+});
 
 describe('checkTransferComplianceInputSchema', () => {
   it('should accept valid input', () => {
@@ -124,11 +225,11 @@ describe('getPolicyInfoInputSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('should reject zero policy ID', () => {
+  it('should accept zero policy ID (built-in always-reject policy)', () => {
     const input = { policyId: 0 };
 
     const result = getPolicyInfoInputZodSchema.safeParse(input);
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it('should reject negative policy ID', () => {
@@ -326,6 +427,73 @@ describe('burnBlockedTokensInputSchema', () => {
 // =============================================================================
 // Response Helper Tests
 // =============================================================================
+
+describe('createCreatePolicyResponse', () => {
+  it('should create valid response for whitelist policy', () => {
+    const response = createCreatePolicyResponse({
+      policyId: 5,
+      policyType: 'whitelist',
+      admin: TEST_ADDRESSES.VALID,
+      transactionHash: TEST_TX_HASHES.VALID,
+      blockNumber: 12345,
+      gasCost: '50000',
+      explorerUrl: 'https://explore.tempo.xyz/tx/0x...',
+    });
+
+    expect(response.success).toBe(true);
+    expect(response.policyId).toBe(5);
+    expect(response.policyType).toBe('whitelist');
+    expect(response.admin).toBe(TEST_ADDRESSES.VALID);
+    expect(response.transactionHash).toBe(TEST_TX_HASHES.VALID);
+    expect(response.blockNumber).toBe(12345);
+    expect(response.timestamp).toBeDefined();
+  });
+
+  it('should create valid response for blacklist policy', () => {
+    const response = createCreatePolicyResponse({
+      policyId: 10,
+      policyType: 'blacklist',
+      admin: TEST_ADDRESSES.VALID_2,
+      transactionHash: TEST_TX_HASHES.VALID,
+      blockNumber: 99999,
+      gasCost: '60000',
+      explorerUrl: 'https://explore.tempo.xyz/tx/0x...',
+    });
+
+    expect(response.success).toBe(true);
+    expect(response.policyId).toBe(10);
+    expect(response.policyType).toBe('blacklist');
+  });
+
+  it('should include ISO timestamp', () => {
+    const response = createCreatePolicyResponse({
+      policyId: 2,
+      policyType: 'whitelist',
+      admin: TEST_ADDRESSES.VALID,
+      transactionHash: TEST_TX_HASHES.VALID,
+      blockNumber: 12345,
+      gasCost: '50000',
+      explorerUrl: 'https://explore.tempo.xyz/tx/0x...',
+    });
+
+    expect(response.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
+  });
+
+  it('should include explorer URL', () => {
+    const explorerUrl = 'https://explore.tempo.xyz/tx/0xabc123';
+    const response = createCreatePolicyResponse({
+      policyId: 3,
+      policyType: 'whitelist',
+      admin: TEST_ADDRESSES.VALID,
+      transactionHash: TEST_TX_HASHES.VALID,
+      blockNumber: 12345,
+      gasCost: '50000',
+      explorerUrl,
+    });
+
+    expect(response.explorerUrl).toBe(explorerUrl);
+  });
+});
 
 describe('createCheckTransferComplianceResponse', () => {
   it('should create valid response for allowed transfer', () => {
