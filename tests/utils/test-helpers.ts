@@ -54,6 +54,18 @@ export const TEST_TOKENS = {
 } as const;
 
 /**
+ * Test contract addresses.
+ */
+export const TEST_CONTRACTS = {
+  /** DEX (Stablecoin Exchange) */
+  DEX: '0xDEX0000000000000000000000000000000000000',
+  /** Rewards Contract */
+  REWARDS: '0xREW0000000000000000000000000000000000000',
+  /** Fee AMM Contract */
+  FEE_AMM: '0xFEE0000000000000000000000000000000000000',
+} as const;
+
+/**
  * Test token symbols.
  */
 export const TEST_TOKEN_SYMBOLS = {

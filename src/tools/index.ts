@@ -16,6 +16,7 @@
  * - concurrent: Parallel transaction execution via nonceKey
  * - rewards: TIP-20 rewards (opt-in, claim, status, auto-forwarding)
  * - fee-amm: Fee AMM liquidity management for gas token conversion
+ * - dex-advanced: Advanced orderbook trading (limit orders, flip orders)
  */
 
 import { registerPaymentTools } from './payments/index.js';
@@ -29,6 +30,7 @@ import { registerConcurrentTools } from './concurrent/index.js';
 import { registerAccessKeyTools } from './access-keys/index.js';
 import { registerRewardsTools } from './rewards/index.js';
 import { registerFeeAmmTools } from './fee-amm/index.js';
+import { registerDexAdvancedTools } from './dex-advanced/index.js';
 
 /**
  * Register all MCP tools with the server.
@@ -49,4 +51,5 @@ export function registerAllTools(): void {
   registerAccessKeyTools();
   registerRewardsTools();
   registerFeeAmmTools();
+  registerDexAdvancedTools();
 }

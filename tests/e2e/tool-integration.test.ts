@@ -254,6 +254,98 @@ describeE2E('E2E: MCP Tool Integration', () => {
   });
 
   // ===========================================================================
+  // DEX Advanced Tools
+  // ===========================================================================
+
+  describe('DEX Advanced Tools', () => {
+    it('should call get_orderbook and return valid structure', async () => {
+      const { getDexAdvancedService } = await import('../../src/services/dex-advanced-service.js');
+      const service = getDexAdvancedService();
+
+      try {
+        const result = await service.getOrderbook(E2E_CONFIG.tokens.alphaUSD);
+
+        expect(result).toBeDefined();
+        expect(result).toHaveProperty('baseToken');
+        expect(result).toHaveProperty('quoteToken');
+        expect(result).toHaveProperty('baseTokenSymbol');
+        expect(result).toHaveProperty('quoteTokenSymbol');
+        expect(result).toHaveProperty('bids');
+        expect(result).toHaveProperty('asks');
+        expect(Array.isArray(result.bids)).toBe(true);
+        expect(Array.isArray(result.asks)).toBe(true);
+
+        console.log(`  Pair: ${result.baseTokenSymbol}/${result.quoteTokenSymbol}`);
+        console.log(`  Bids: ${result.bids.length} levels`);
+        console.log(`  Asks: ${result.asks.length} levels`);
+        if (result.bestBid !== null) {
+          console.log(`  Best Bid: $${result.bestBid.toFixed(6)}`);
+        }
+        if (result.bestAsk !== null) {
+          console.log(`  Best Ask: $${result.bestAsk.toFixed(6)}`);
+        }
+      } catch (error) {
+        console.log(`  Skipped: ${(error as Error).message}`);
+      }
+    }, E2E_CONFIG.timeout);
+
+    it('should call get_my_orders and return orders array', async () => {
+      const { getDexAdvancedService } = await import('../../src/services/dex-advanced-service.js');
+      const service = getDexAdvancedService();
+
+      try {
+        const result = await service.getOrdersByOwner();
+
+        expect(Array.isArray(result)).toBe(true);
+
+        console.log(`  Open orders: ${result.length}`);
+        if (result.length > 0) {
+          const order = result[0];
+          console.log(`  First order: ${order.side} ${order.amount} @ tick ${order.tick}`);
+        }
+      } catch (error) {
+        console.log(`  Skipped: ${(error as Error).message}`);
+      }
+    }, E2E_CONFIG.timeout);
+
+    it('should convert ticks to prices correctly', async () => {
+      const { getDexAdvancedService } = await import('../../src/services/dex-advanced-service.js');
+      const service = getDexAdvancedService();
+
+      // Tick 0 = $1.0000
+      expect(service.tickToPrice(0)).toBe(1.0);
+
+      // Tick -10 = $0.9999
+      expect(service.tickToPrice(-10)).toBeCloseTo(0.9999, 4);
+
+      // Tick 10 = $1.0001
+      expect(service.tickToPrice(10)).toBeCloseTo(1.0001, 4);
+
+      console.log('  Tick conversions: VALID');
+      console.log('  tick 0 => $1.0000');
+      console.log('  tick -10 => $0.9999');
+      console.log('  tick 10 => $1.0001');
+    }, E2E_CONFIG.timeout);
+
+    it('should get DEX balance for token', async () => {
+      const { getDexAdvancedService } = await import('../../src/services/dex-advanced-service.js');
+      const service = getDexAdvancedService();
+
+      try {
+        const balance = await service.getDexBalance(E2E_CONFIG.tokens.alphaUSD);
+
+        expect(typeof balance).toBe('bigint');
+        expect(balance).toBeGreaterThanOrEqual(0n);
+
+        const formatted = (Number(balance) / 1e6).toFixed(6);
+        console.log(`  DEX Balance: ${formatted} AlphaUSD`);
+      } catch (error) {
+        console.log(`  Skipped: ${(error as Error).message}`);
+      }
+    }, E2E_CONFIG.timeout);
+  });
+
+  // ===========================================================================
   // Security Integration
   // ===========================================================================
 

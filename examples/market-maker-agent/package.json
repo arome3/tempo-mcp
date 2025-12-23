@@ -1,0 +1,19 @@
+{
+  "name": "tempo-market-maker-agent",
+  "version": "1.0.0",
+  "description": "Automated market-making agent for Tempo DEX",
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "orderbook": "tsx src/index.ts --orderbook",
+    "orders": "tsx src/index.ts --orders",
+    "place": "tsx src/place-order.ts",
+    "cancel": "tsx src/cancel-order.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "dotenv": "^16.3.1",
+    "tsx": "^4.7.0"
+  }
+}

@@ -56,6 +56,11 @@ Then ask Claude: *"What's my AlphaUSD balance?"*
 | "What's the Fee AMM pool info for AlphaUSD?" | Check pool reserves and LP supply |
 | "Add 1000 AlphaUSD liquidity to the Fee AMM" | Provide liquidity to earn conversion fees |
 | "What's my LP position in the Fee AMM?" | View your share and underlying token value |
+| "Show the AlphaUSD orderbook" | View bid/ask levels on the DEX |
+| "Place a limit buy for 100 AlphaUSD at tick -10" | Create a resting order at $0.9999 |
+| "Place a flip order: buy at -10, flip to sell at 10" | Auto-reversing market maker order |
+| "What are my open orders?" | List your active DEX orders |
+| "Cancel order 12345" | Cancel an open order and get refund |
 
 ---
 
@@ -81,6 +86,7 @@ AI agents are evolving from assistants into autonomous actors that can take real
 - **Compliance Management**: Automate KYC/AML whitelist maintenance and transfer validation
 - **Delegated Agent Signing**: Use access keys (session keys) for AI agents with spending limits
 - **Fee Liquidity Provision**: Earn yields by providing liquidity to the Fee AMM for gas conversions
+- **Automated Market Making**: Place flip orders that oscillate between buy/sell for stablecoin arbitrage
 
 ---
 
@@ -107,6 +113,7 @@ AI agents are evolving from assistants into autonomous actors that can take real
 - **Policy Compliance** — TIP-403 whitelist/blacklist management and pre-transfer validation
 - **Rewards Management** — TIP-20 opt-in rewards: opt-in/out, claim rewards, set recipient, view status
 - **Fee AMM Liquidity** — Provide liquidity to the gas fee conversion pool and earn from stablecoin swaps
+- **DEX Advanced Orders** — Limit orders, flip orders (auto-reversing), orderbook queries, and order management
 
 ### Security
 - **Spending Limits** — Per-token and daily USD limits
@@ -338,6 +345,19 @@ const result = await client.callTool({
 | `add_fee_liquidity` | Add liquidity to earn conversion fees | `userToken`, `amountUser`, `amountValidator` |
 | `remove_fee_liquidity` | Withdraw liquidity and LP tokens | `userToken`, `lpAmount` |
 
+### DEX Advanced Tools (Orderbook Trading)
+
+| Tool | Description | Key Parameters |
+|------|-------------|----------------|
+| `place_limit_order` | Place a resting limit order on the orderbook | `token`, `amount`, `side`, `tick` |
+| `place_flip_order` | Place auto-reversing order for market making | `token`, `amount`, `side`, `tick`, `flipTick` |
+| `cancel_order` | Cancel open order and refund tokens | `orderId` |
+| `get_orderbook` | View bid/ask levels and spread | `baseToken`, `quoteToken?`, `depth?` |
+| `get_my_orders` | List your open/filled/cancelled orders | `token?`, `status?` |
+| `get_order_status` | Get order details and fill percentage | `orderId` |
+
+> **Tick Pricing**: Price = 1 + tick/100,000. Tick 0 = $1.0000, tick -10 = $0.9999, tick 10 = $1.0001
+
 ---
 
 ## MCP Resources Reference
@@ -359,6 +379,8 @@ Resources provide read-only access to blockchain data via URI patterns:
 | `tempo://access-key/{account}/{keyId}` | Access key info (type, expiry, revoked status) |
 | `tempo://access-key/{account}/{keyId}/limit/{token}` | Remaining spending limit for token |
 | `tempo://fee-amm/{userToken}/{validatorToken}` | Fee AMM pool info (reserves, LP supply, swap rate) |
+| `tempo://dex/orderbook/{baseToken}` | DEX orderbook with bid/ask levels |
+| `tempo://dex/order/{orderId}` | Order details and fill status |
 
 **Example Usage:**
 ```
@@ -618,6 +640,7 @@ Explore complete agent implementations in the `/examples` directory:
 | [Invoice Agent](./examples/invoice-agent/) | AP automation with memo reconciliation |
 | [Treasury Agent](./examples/treasury-agent/) | Multi-token portfolio management |
 | [Compliance Agent](./examples/compliance-agent/) | TIP-403 whitelist/blacklist management |
+| [Market Maker Agent](./examples/market-maker-agent/) | DEX orderbook trading with flip orders |
 
 ---
 

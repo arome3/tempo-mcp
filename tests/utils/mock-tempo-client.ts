@@ -6,7 +6,22 @@
  */
 
 import { vi } from 'vitest';
-import { TEST_ADDRESSES, TEST_TOKENS, TEST_TX_HASHES } from './test-helpers.js';
+import { keccak256, toBytes } from 'viem';
+import { TEST_ADDRESSES, TEST_CONTRACTS, TEST_TOKENS, TEST_TX_HASHES } from './test-helpers.js';
+
+// =============================================================================
+// Event Signatures (must match the actual signatures used in dex-advanced-service)
+// =============================================================================
+
+/** OrderPlaced event signature */
+const ORDER_PLACED_SIGNATURE = keccak256(
+  toBytes('OrderPlaced(uint128,address,address,uint128,bool,int16)')
+);
+
+/** FlipOrderPlaced event signature */
+const FLIP_ORDER_PLACED_SIGNATURE = keccak256(
+  toBytes('FlipOrderPlaced(uint128,address,address,uint128,bool,int16,int16)')
+);
 
 // =============================================================================
 // Types
@@ -24,7 +39,7 @@ export interface MockTransactionReceipt {
   contractAddress: `0x${string}` | null;
   status: 'success' | 'reverted';
   gasUsed: bigint;
-  logs: readonly { topics: readonly string[]; data: string }[];
+  logs: readonly { address: `0x${string}`; topics: readonly string[]; data: string }[];
 }
 
 /**
@@ -89,6 +104,33 @@ export interface MockTempoClientOptions {
     /** Token allowance for approvals */
     allowance?: bigint;
   };
+  /** DEX Advanced orderbook mock data */
+  dex?: {
+    /** Active order ID counter */
+    activeOrderId?: bigint;
+    /** Order data for getOrder queries */
+    orders?: Map<bigint, {
+      maker: `0x${string}`;
+      bookKey: `0x${string}`;
+      isBid: boolean;
+      tick: number;
+      amount: bigint;
+      remaining: bigint;
+      isFlip: boolean;
+    }>;
+    /** Tick level liquidity */
+    tickLevels?: Map<string, { head: bigint; tail: bigint; totalLiquidity: bigint }>;
+    /** Best bid tick */
+    bestBidTick?: number;
+    /** Best ask tick */
+    bestAskTick?: number;
+    /** DEX balance for a token */
+    dexBalance?: bigint;
+    /** Token allowance for DEX */
+    allowance?: bigint;
+    /** Order ID to return on place */
+    newOrderId?: bigint;
+  };
 }
 
 // =============================================================================
@@ -117,6 +159,7 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
     hasRole = true,
     rewards = {},
     feeAmm = {},
+    dex = {},
   } = options;
 
   // Default Fee AMM values
@@ -139,6 +182,18 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
     totalClaimed: rewards.totalClaimed ?? BigInt(50 * 1e6), // 50 tokens
     totalOptedInSupply: rewards.totalOptedInSupply ?? BigInt(1000000 * 1e6), // 1M tokens
     totalDistributed: rewards.totalDistributed ?? BigInt(10000 * 1e6), // 10K tokens
+  };
+
+  // Default DEX values
+  const dexDefaults = {
+    activeOrderId: dex.activeOrderId ?? BigInt(100),
+    orders: dex.orders ?? new Map(),
+    tickLevels: dex.tickLevels ?? new Map(),
+    bestBidTick: dex.bestBidTick ?? -10,
+    bestAskTick: dex.bestAskTick ?? 10,
+    dexBalance: dex.dexBalance ?? BigInt(0),
+    allowance: dex.allowance ?? BigInt(1000000 * 1e6), // Pre-approved by default
+    newOrderId: dex.newOrderId ?? BigInt(101),
   };
 
   const maybeThrow = (method: string) => {
@@ -209,6 +264,12 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
     getBlockNumber: vi.fn().mockImplementation(() => {
       maybeThrow('getBlockNumber');
       return blockNumber;
+    }),
+
+    // Batch transactions (used by DEX service)
+    sendBatch: vi.fn().mockImplementation(() => {
+      maybeThrow('sendBatch');
+      return txHash;
     }),
 
     // Public client (for read operations)
@@ -294,6 +355,44 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
           if (functionName === 'allowance') {
             return Promise.resolve(feeAmmDefaults.allowance);
           }
+          // Handle DEX contract calls
+          if (functionName === 'activeOrderId') {
+            return Promise.resolve(dexDefaults.activeOrderId);
+          }
+          if (functionName === 'pendingOrderId') {
+            return Promise.resolve(dexDefaults.activeOrderId);
+          }
+          // DEX balanceOf with 2 args (user, token)
+          if (functionName === 'balanceOf' && args && args.length === 2) {
+            return Promise.resolve(dexDefaults.dexBalance);
+          }
+          if (functionName === 'pairKey') {
+            // Return a mock pair key
+            return Promise.resolve('0x' + 'ab'.repeat(32) as `0x${string}`);
+          }
+          if (functionName === 'books') {
+            // Return mock book info (base, quote, bestBidTick, bestAskTick)
+            const baseToken = TEST_TOKENS.ALPHA_USD as `0x${string}`;
+            const quoteToken = TEST_TOKENS.PATH_USD as `0x${string}`;
+            return Promise.resolve([
+              baseToken,
+              quoteToken,
+              dexDefaults.bestBidTick,
+              dexDefaults.bestAskTick,
+            ]);
+          }
+          if (functionName === 'getTickLevel') {
+            // Return mock tick level data (head, tail, totalLiquidity)
+            const tick = args?.[1] as number;
+            const isBid = args?.[2] as boolean;
+            const key = `${tick}:${isBid}`;
+            const level = dexDefaults.tickLevels.get(key);
+            if (level) {
+              return Promise.resolve([level.head, level.tail, level.totalLiquidity]);
+            }
+            // Return some default liquidity
+            return Promise.resolve([BigInt(0), BigInt(0), BigInt(1000 * 1e6)]);
+          }
           return Promise.resolve(undefined);
         }
       ),
@@ -352,10 +451,12 @@ export function createMockReceipt(
     claimedAmount?: bigint;
     lpTokensMinted?: bigint;
     burnAmounts?: { amountUser: bigint; amountValidator: bigint };
+    /** DEX order ID for OrderPlaced events */
+    orderId?: bigint;
   } = {}
 ): MockTransactionReceipt {
   // Create mock event logs based on options
-  const logs: { topics: readonly string[]; data: string }[] = [];
+  const logs: { address: `0x${string}`; topics: readonly string[]; data: string }[] = [];
 
   // RewardsClaimed event log
   if (options.claimedAmount !== undefined) {
@@ -364,6 +465,7 @@ export function createMockReceipt(
     // data = amount (uint256)
     const amountHex = options.claimedAmount.toString(16).padStart(64, '0');
     logs.push({
+      address: TEST_CONTRACTS.REWARDS as `0x${string}`,
       topics: [
         '0x' + 'a'.repeat(64), // Event signature (mock)
         '0x' + '0'.repeat(24) + TEST_ADDRESSES.VALID.slice(2), // Indexed account
@@ -380,6 +482,7 @@ export function createMockReceipt(
     const amountValidatorHex = (BigInt(10000) * BigInt(1e6)).toString(16).padStart(64, '0');
     const lpTokensHex = options.lpTokensMinted.toString(16).padStart(64, '0');
     logs.push({
+      address: TEST_CONTRACTS.FEE_AMM as `0x${string}`,
       topics: [
         '0x' + 'b'.repeat(64), // Event signature (mock)
         '0x' + '0'.repeat(24) + TEST_ADDRESSES.VALID.slice(2), // Indexed sender
@@ -397,6 +500,7 @@ export function createMockReceipt(
     const amountUserHex = options.burnAmounts.amountUser.toString(16).padStart(64, '0');
     const amountValidatorHex = options.burnAmounts.amountValidator.toString(16).padStart(64, '0');
     logs.push({
+      address: TEST_CONTRACTS.FEE_AMM as `0x${string}`,
       topics: [
         '0x' + 'c'.repeat(64), // Event signature (mock)
         '0x' + '0'.repeat(24) + TEST_ADDRESSES.VALID.slice(2), // Indexed sender
@@ -404,6 +508,22 @@ export function createMockReceipt(
         '0x' + '0'.repeat(24) + TEST_TOKENS.PATH_USD.slice(2), // Indexed validatorToken
       ],
       data: '0x' + lpAmountHex + amountUserHex + amountValidatorHex,
+    });
+  }
+
+  // DEX OrderPlaced event log
+  if (options.orderId !== undefined) {
+    // OrderPlaced(orderId indexed, maker indexed, token indexed, amount, isBid, tick)
+    const orderIdHex = options.orderId.toString(16).padStart(64, '0');
+    logs.push({
+      address: TEST_CONTRACTS.DEX as `0x${string}`,
+      topics: [
+        ORDER_PLACED_SIGNATURE, // Real event signature
+        '0x' + orderIdHex, // Indexed orderId
+        '0x' + '0'.repeat(24) + TEST_ADDRESSES.VALID.slice(2), // Indexed maker
+        '0x' + '0'.repeat(24) + TEST_TOKENS.ALPHA_USD.slice(2), // Indexed token
+      ],
+      data: '0x' + '0'.repeat(64), // Non-indexed data
     });
   }
 
