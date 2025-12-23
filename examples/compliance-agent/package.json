@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "tsx src/index.ts",
+    "create-policy": "tsx src/create-policy.ts",
     "check": "tsx src/check-compliance.ts",
     "whitelist": "tsx src/manage-whitelist.ts",
     "report": "tsx src/compliance-report.ts"

@@ -42,6 +42,7 @@ Then ask Claude: *"What's my AlphaUSD balance?"*
 | "Who has the ISSUER_ROLE on AlphaUSD?" | Query token role members |
 | "Grant PAUSE_ROLE to 0x..." | Assign role to address (requires admin) |
 | "Pause the AlphaUSD token" | Emergency pause all transfers |
+| "Create a whitelist policy" | Create new TIP-403 compliance policy |
 | "Is 0x... whitelisted in policy 1?" | Check address compliance status |
 | "Add 0x... to the whitelist" | Whitelist address (requires policy owner) |
 | "Can 0x... transfer to 0x...?" | Pre-validate transfer compliance |
@@ -298,6 +299,7 @@ const result = await client.callTool({
 
 | Tool | Description | Key Parameters |
 |------|-------------|----------------|
+| `create_policy` | Create a new compliance policy | `policyType`, `admin?`, `initialAccounts?` |
 | `check_transfer_compliance` | Pre-validate if transfer is allowed | `token`, `from`, `to` |
 | `get_policy_info` | Get policy details | `policyId` |
 | `is_whitelisted` | Check if address is whitelisted | `policyId`, `account` |
@@ -307,6 +309,8 @@ const result = await client.callTool({
 | `add_to_blacklist` | Block an address | `policyId`, `account` |
 | `remove_from_blacklist` | Unblock an address | `policyId`, `account` |
 | `burn_blocked_tokens` | Burn tokens from blocked address | `token`, `blockedAddress`, `amount` |
+
+> **Policy Types**: `whitelist` (only approved addresses can transact) or `blacklist` (block specific addresses). Built-in policies: 0 (always reject), 1 (always allow). Custom policies start at ID 2.
 
 ### Access Key Tools (Session Keys)
 
