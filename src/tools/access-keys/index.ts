@@ -17,7 +17,8 @@
  * - Expiration timestamps
  */
 
-import type { Address } from 'viem';
+import type { Address, Hex } from 'viem';
+import { parseUnits } from 'viem';
 import { server } from '../../server.js';
 import { getConfig } from '../../config/index.js';
 import { getTempoClient } from '../../services/tempo-client.js';
@@ -25,6 +26,9 @@ import { getTokenService, resolveTokenAddress } from '../../services/token-servi
 import {
   getAccessKeyService,
   SIGNATURE_TYPE_NAMES,
+  deriveAddressFromP256,
+  parseSignatureType,
+  type TokenLimit,
 } from '../../services/access-key-service.js';
 import { getSecurityLayer } from '../../security/index.js';
 import { buildExplorerTxUrl } from '../../utils/formatting.js';
@@ -38,6 +42,7 @@ import {
   getRemainingLimitInputSchema,
   updateSpendingLimitInputSchema,
   // Response helpers
+  createCreateAccessKeyResponse,
   createRevokeAccessKeyResponse,
   createGetAccessKeyInfoResponse,
   createGetRemainingLimitResponse,
@@ -79,6 +84,63 @@ function getDefaultAccount(): Address {
 }
 
 // =============================================================================
+// P256 Key Generation Utilities
+// =============================================================================
+
+/**
+ * Generate a P256 key pair using WebCrypto API.
+ * Returns the public key coordinates and private key for storage.
+ */
+async function generateP256KeyPair(): Promise<{
+  publicKeyX: Hex;
+  publicKeyY: Hex;
+  privateKeyHex: Hex;
+  keyId: Address;
+}> {
+  // Generate P256 key pair using WebCrypto
+  const keyPair = await crypto.subtle.generateKey(
+    {
+      name: 'ECDSA',
+      namedCurve: 'P-256',
+    },
+    true, // extractable
+    ['sign', 'verify']
+  );
+
+  // Export public key to get coordinates
+  const publicKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.publicKey);
+
+  if (!publicKeyJwk.x || !publicKeyJwk.y) {
+    throw new Error('Failed to extract public key coordinates');
+  }
+
+  // Convert base64url to hex (32 bytes each for P-256)
+  const xBytes = Buffer.from(publicKeyJwk.x, 'base64url');
+  const yBytes = Buffer.from(publicKeyJwk.y, 'base64url');
+
+  const publicKeyX = `0x${xBytes.toString('hex').padStart(64, '0')}` as Hex;
+  const publicKeyY = `0x${yBytes.toString('hex').padStart(64, '0')}` as Hex;
+
+  // Export private key
+  const privateKeyJwk = await crypto.subtle.exportKey('jwk', keyPair.privateKey);
+  if (!privateKeyJwk.d) {
+    throw new Error('Failed to extract private key');
+  }
+  const dBytes = Buffer.from(privateKeyJwk.d, 'base64url');
+  const privateKeyHex = `0x${dBytes.toString('hex').padStart(64, '0')}` as Hex;
+
+  // Derive keyId from public key coordinates
+  const keyId = deriveAddressFromP256(publicKeyX, publicKeyY);
+
+  return {
+    publicKeyX,
+    publicKeyY,
+    privateKeyHex,
+    keyId,
+  };
+}
+
+// =============================================================================
 // create_access_key Tool
 // =============================================================================
 
@@ -88,15 +150,16 @@ function registerCreateAccessKeyTool(): void {
     {
       title: 'Create Access Key',
       description:
-        'Create a new access key (session key) for delegated signing. ' +
-        'Supports P256 (WebAuthn/passkey), secp256k1, and WebAuthn signature types. ' +
-        'Access keys can have spending limits per token and expiration timestamps. ' +
-        'Note: This authorizes a key ID on the Account Keychain precompile. ' +
-        'For full P256 key generation, use the tempo.ts SDK.',
+        'Create a new P256 access key (session key) for delegated signing. ' +
+        'Generates a new P256 key pair, authorizes it on-chain, and returns the key details. ' +
+        'IMPORTANT: Store the returned privateKey securely - it cannot be recovered! ' +
+        'Access keys can have spending limits per token and expiration timestamps.',
       inputSchema: createAccessKeyInputSchema,
     },
     async (args: CreateAccessKeyInput) => {
       const ctx = createRequestContext('create_access_key');
+      const config = getConfig();
+      const accessKeyService = getAccessKeyService();
       const security = getSecurityLayer();
 
       const logArgs = {
@@ -108,28 +171,104 @@ function registerCreateAccessKeyTool(): void {
       };
 
       try {
-        // For this tool, we need a key ID to authorize
-        // In a full implementation, we would generate a P256 key pair here
-        // For now, we'll return an error explaining this limitation
-        throw new Error(
-          'create_access_key requires a keyId parameter. ' +
-          'To create a new access key with P256 key generation, use the tempo.ts SDK: ' +
-          'const keyPair = await WebCryptoP256.createKeyPair(); ' +
-          'const accessKey = Account.fromWebCryptoP256(keyPair, { access: account }); ' +
-          'Then use authorize_access_key tool with the derived keyId.'
+        // Generate P256 key pair
+        const { publicKeyX, publicKeyY, privateKeyHex, keyId } = await generateP256KeyPair();
+
+        // Parse signature type
+        const signatureType = parseSignatureType(args.signatureType ?? 'p256');
+
+        // Parse spending limits
+        const limits: TokenLimit[] = [];
+        if (args.limits && args.limits.length > 0) {
+          for (const limit of args.limits) {
+            const tokenAddress = resolveTokenAddress(limit.token);
+            // Parse amount - assume 6 decimals for stablecoins
+            const amountBigInt = parseUnits(limit.amount, 6);
+            limits.push({
+              token: tokenAddress,
+              amount: amountBigInt,
+            });
+          }
+        }
+
+        // Authorize the key on-chain
+        const result = await accessKeyService.authorizeKey(
+          keyId,
+          signatureType,
+          args.expiry ?? 0,
+          args.enforceLimits ?? true,
+          limits
         );
+
+        // Get creator address
+        const createdBy = getDefaultAccount();
+
+        // Log success
+        await security.logSuccess({
+          requestId: ctx.requestId,
+          tool: 'create_access_key',
+          arguments: logArgs,
+          durationMs: Date.now() - ctx.startTime,
+          transactionHash: result.hash,
+          gasCost: result.gasCost,
+        });
+
+        // Build response with key details
+        const output = createCreateAccessKeyResponse({
+          transactionHash: result.hash,
+          blockNumber: result.blockNumber,
+          keyId,
+          signatureType: args.signatureType ?? 'p256',
+          expiry: args.expiry ?? null,
+          enforceLimits: args.enforceLimits ?? true,
+          limits: args.limits,
+          label: args.label ?? null,
+          createdBy,
+          gasCost: result.gasCost,
+          explorerUrl: buildExplorerTxUrl(config.network.explorerUrl, result.hash),
+        });
+
+        // Add key material to response (user must store this!)
+        const fullOutput = {
+          ...output,
+          keyMaterial: {
+            warning: 'STORE THIS SECURELY! The private key cannot be recovered.',
+            publicKeyX,
+            publicKeyY,
+            privateKey: privateKeyHex,
+          },
+        };
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(fullOutput, null, 2),
+            },
+          ],
+        };
       } catch (error) {
         const normalized = normalizeError(error);
         const durationMs = Date.now() - ctx.startTime;
 
-        await security.logFailure({
-          requestId: ctx.requestId,
-          tool: 'create_access_key',
-          arguments: logArgs,
-          durationMs,
-          errorMessage: normalized.message,
-          errorCode: normalized.code,
-        });
+        if (isTempoMcpError(error) && error.name === 'SecurityError') {
+          await security.logRejected({
+            requestId: ctx.requestId,
+            tool: 'create_access_key',
+            arguments: logArgs,
+            durationMs,
+            rejectionReason: error.message,
+          });
+        } else {
+          await security.logFailure({
+            requestId: ctx.requestId,
+            tool: 'create_access_key',
+            arguments: logArgs,
+            durationMs,
+            errorMessage: normalized.message,
+            errorCode: normalized.code,
+          });
+        }
 
         const errorOutput = createAccessKeyErrorResponse({
           code: normalized.code,
@@ -427,17 +566,17 @@ function registerUpdateSpendingLimitTool(): void {
       try {
         const tokenAddress = resolveTokenAddress(args.token);
 
-        // Parse the new limit as bigint
-        const newLimitBigInt = BigInt(args.newLimit);
-
-        // Get token decimals for formatting
+        // Get token decimals
         let decimals = 6;
         try {
           const tokenInfo = await tokenService.getTokenInfo(tokenAddress);
           decimals = tokenInfo.decimals;
         } catch {
-          // Use default decimals if token info unavailable
+          // Default to 6 decimals for stablecoins
         }
+
+        // Parse the new limit with decimals (same as create_access_key)
+        const newLimitBigInt = parseUnits(args.newLimit, decimals);
 
         const result = await accessKeyService.updateSpendingLimit(
           args.keyId as Address,
@@ -461,7 +600,7 @@ function registerUpdateSpendingLimitTool(): void {
           blockNumber: result.blockNumber,
           keyId: args.keyId,
           token: tokenAddress,
-          newLimit: args.newLimit,
+          newLimit: newLimitBigInt.toString(), // Pass the actual on-chain value
           decimals,
           updatedBy,
           gasCost: result.gasCost,

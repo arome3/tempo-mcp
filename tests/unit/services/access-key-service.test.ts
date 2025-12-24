@@ -56,6 +56,33 @@ import {
 // =============================================================================
 
 /**
+ * Encode key info into storage format.
+ * Storage layout (right-aligned, 32 bytes total):
+ * - signatureType: 1 byte (last byte)
+ * - expiry: 8 bytes (u64)
+ * - enforceLimits: 1 byte (bool)
+ * - isRevoked: 1 byte (bool)
+ */
+function encodeKeyInfoStorage(keyInfo: {
+  signatureType: number;
+  expiry: number;
+  enforceLimits: boolean;
+  isRevoked: boolean;
+}): `0x${string}` {
+  // Build from right to left (32 bytes = 64 hex chars)
+  const signatureTypeHex = keyInfo.signatureType.toString(16).padStart(2, '0');
+  const expiryHex = keyInfo.expiry.toString(16).padStart(16, '0'); // 8 bytes = 16 hex chars
+  const enforceLimitsHex = keyInfo.enforceLimits ? '01' : '00';
+  const isRevokedHex = keyInfo.isRevoked ? '01' : '00';
+
+  // Padding (32 - 11 = 21 bytes = 42 hex chars)
+  const padding = '0'.repeat(42);
+
+  // Layout: padding + isRevoked + enforceLimits + expiry + signatureType
+  return `0x${padding}${isRevokedHex}${enforceLimitsHex}${expiryHex}${signatureTypeHex}` as `0x${string}`;
+}
+
+/**
  * Create a mock client with access key specific contract responses.
  */
 function createAccessKeyMockClient(options: {
@@ -85,31 +112,26 @@ function createAccessKeyMockClient(options: {
     failOnMethod,
   });
 
-  // Override readContract for access key specific calls
+  // Override getStorageAt for access key storage reads
+  baseClient.publicClient.getStorageAt = vi.fn().mockImplementation(() => {
+    if (shouldFail && (!failOnMethod || failOnMethod === 'getStorageAt')) {
+      throw new Error(failMessage);
+    }
+
+    if (!keyInfo) {
+      // Return zero storage to indicate key not found
+      return Promise.resolve('0x0000000000000000000000000000000000000000000000000000000000000000');
+    }
+
+    // Encode the key info into storage format
+    return Promise.resolve(encodeKeyInfoStorage(keyInfo));
+  });
+
+  // Override readContract for remaining limit queries
   baseClient.publicClient.readContract = vi.fn().mockImplementation(
     ({ functionName }: { functionName: string }) => {
       if (shouldFail && (!failOnMethod || failOnMethod === 'readContract')) {
         throw new Error(failMessage);
-      }
-
-      if (functionName === 'getKey') {
-        if (!keyInfo) {
-          // Return zero address keyId to indicate not found
-          return Promise.resolve({
-            signatureType: 0,
-            keyId: '0x0000000000000000000000000000000000000000',
-            expiry: BigInt(0),
-            enforceLimits: false,
-            isRevoked: false,
-          });
-        }
-        return Promise.resolve({
-          signatureType: keyInfo.signatureType,
-          keyId: keyInfo.keyId,
-          expiry: BigInt(keyInfo.expiry),
-          enforceLimits: keyInfo.enforceLimits,
-          isRevoked: keyInfo.isRevoked,
-        });
       }
 
       if (functionName === 'getRemainingLimit') {
@@ -148,7 +170,7 @@ describe('AccessKeyService', () => {
 
   describe('Constants', () => {
     it('should define Account Keychain precompile address', () => {
-      expect(ACCOUNT_KEYCHAIN_ADDRESS).toBe('0xac00000000000000000000000000000000000000');
+      expect(ACCOUNT_KEYCHAIN_ADDRESS).toBe('0xaAAAaaAA00000000000000000000000000000000');
     });
 
     it('should define all signature types', () => {
@@ -394,9 +416,12 @@ describe('AccessKeyService', () => {
     });
 
     it('should return true when key has no expiry (0)', async () => {
+      // Note: Must use a non-zero signatureType (P256=1) because Secp256k1=0
+      // with all other fields as 0/false produces all-zero storage,
+      // which is indistinguishable from "key not found"
       setMockClient(createAccessKeyMockClient({
         keyInfo: {
-          signatureType: SignatureType.Secp256k1,
+          signatureType: SignatureType.P256,
           keyId: TEST_ADDRESSES.VALID_2,
           expiry: 0, // Never expires
           enforceLimits: false,
@@ -433,7 +458,7 @@ describe('AccessKeyService', () => {
       expect(result.gasCost).toBeDefined();
     });
 
-    it('should call writeContract with revokeKey function', async () => {
+    it('should call sendTempoTransaction with revokeKey function data', async () => {
       const mockClient = createAccessKeyMockClient();
       setMockClient(mockClient);
       accessKeyService = new AccessKeyService();
@@ -442,18 +467,18 @@ describe('AccessKeyService', () => {
         TEST_ADDRESSES.VALID_2 as `0x${string}`
       );
 
-      expect(mockClient.walletClient.writeContract).toHaveBeenCalledWith(
+      // revokeAccessKey now uses sendTempoTransaction instead of writeContract
+      expect(mockClient.sendTempoTransaction).toHaveBeenCalledWith(
         expect.objectContaining({
-          address: ACCOUNT_KEYCHAIN_ADDRESS,
-          functionName: 'revokeKey',
+          to: ACCOUNT_KEYCHAIN_ADDRESS,
         })
       );
     });
 
-    it('should throw on writeContract failure', async () => {
+    it('should throw on sendTempoTransaction failure', async () => {
       setMockClient(createAccessKeyMockClient({
         shouldFail: true,
-        failOnMethod: 'writeContract',
+        failOnMethod: 'sendTempoTransaction',
         failMessage: 'Transaction failed',
       }));
       accessKeyService = new AccessKeyService();
@@ -484,7 +509,7 @@ describe('AccessKeyService', () => {
       expect(result.blockNumber).toBeGreaterThan(0);
     });
 
-    it('should call writeContract with updateSpendingLimit function', async () => {
+    it('should call sendTempoTransaction with updateSpendingLimit function data', async () => {
       const mockClient = createAccessKeyMockClient();
       setMockClient(mockClient);
       accessKeyService = new AccessKeyService();
@@ -495,18 +520,18 @@ describe('AccessKeyService', () => {
         BigInt(10000000000)
       );
 
-      expect(mockClient.walletClient.writeContract).toHaveBeenCalledWith(
+      // updateSpendingLimit now uses sendTempoTransaction instead of writeContract
+      expect(mockClient.sendTempoTransaction).toHaveBeenCalledWith(
         expect.objectContaining({
-          address: ACCOUNT_KEYCHAIN_ADDRESS,
-          functionName: 'updateSpendingLimit',
+          to: ACCOUNT_KEYCHAIN_ADDRESS,
         })
       );
     });
 
-    it('should throw on writeContract failure', async () => {
+    it('should throw on sendTempoTransaction failure', async () => {
       setMockClient(createAccessKeyMockClient({
         shouldFail: true,
-        failOnMethod: 'writeContract',
+        failOnMethod: 'sendTempoTransaction',
         failMessage: 'Transaction failed',
       }));
       accessKeyService = new AccessKeyService();

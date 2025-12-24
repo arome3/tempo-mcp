@@ -16,6 +16,7 @@ import {
   http,
   publicActions,
   walletActions,
+  encodeFunctionData,
   type Address,
   type Hash,
   type TransactionReceipt,
@@ -27,6 +28,12 @@ import {
 import { privateKeyToAccount, type PrivateKeyAccount } from 'viem/accounts';
 import { tempo } from 'tempo.ts/chains';
 import { tempoActions } from 'tempo.ts/viem';
+import {
+  TransactionEnvelopeTempo,
+  SignatureEnvelope,
+} from 'tempo.ts/ox';
+import * as Secp256k1 from 'ox/Secp256k1';
+import * as Value from 'ox/Value';
 import { getConfig } from '../config/index.js';
 import { InternalError, ValidationError } from '../utils/errors.js';
 
@@ -726,6 +733,90 @@ export class TempoClient {
       nonceKey: BigInt(params.nonceKey), // Tempo-specific: parallel execution channel
       feeToken: this.feeToken,
     } as Parameters<typeof this.walletClient.sendTransaction>[0]);
+
+    return hash;
+  }
+
+  /**
+   * Send a raw Tempo transaction (type 0x76).
+   *
+   * This method constructs and signs a proper Tempo transaction envelope,
+   * which is required for operations on the Account Keychain precompile
+   * (revokeKey, updateSpendingLimit) that need the root key context.
+   *
+   * @param params - Transaction parameters
+   * @returns Transaction hash
+   * @throws Error if wallet is not configured
+   */
+  async sendTempoTransaction(params: {
+    to: Address;
+    data: `0x${string}`;
+    value?: bigint;
+    gas?: bigint;
+  }): Promise<Hash> {
+    if (!this.walletClient || !this.account) {
+      throw InternalError.walletNotConfigured();
+    }
+
+    const config = getConfig();
+
+    // Get current nonce
+    const nonce = await this.publicClient.getTransactionCount({
+      address: this.account.address,
+      blockTag: 'pending',
+    });
+
+    // Get current gas prices
+    const gasPrice = await this.publicClient.getGasPrice();
+    const maxFeePerGas = params.gas
+      ? Value.fromGwei('50')
+      : gasPrice * 2n;
+    const maxPriorityFeePerGas = Value.fromGwei('10');
+
+    // Estimate gas if not provided
+    const gas = params.gas ?? await this.estimateGas({
+      to: params.to,
+      data: params.data,
+      value: params.value,
+    });
+
+    // Get chain ID
+    const chainId = this.chain.id;
+
+    // Create Tempo transaction envelope
+    const transaction = TransactionEnvelopeTempo.from({
+      calls: [
+        {
+          to: params.to,
+          data: params.data,
+          value: params.value ?? 0n,
+        },
+      ],
+      chainId,
+      feeToken: this.feeToken,
+      nonce: BigInt(nonce),
+      gas,
+      maxFeePerGas,
+      maxPriorityFeePerGas,
+    });
+
+    // Get the sign payload and sign with the root key
+    const signPayload = TransactionEnvelopeTempo.getSignPayload(transaction);
+    const signature = Secp256k1.sign({
+      payload: signPayload,
+      privateKey: config.wallet.privateKey as `0x${string}`,
+    });
+
+    // Serialize with secp256k1 signature (root key signing)
+    const serialized = TransactionEnvelopeTempo.serialize(transaction, {
+      signature: SignatureEnvelope.from(signature),
+    });
+
+    // Send raw transaction
+    const hash = await this.publicClient.request({
+      method: 'eth_sendRawTransaction' as 'eth_sendRawTransaction',
+      params: [serialized],
+    }) as Hash;
 
     return hash;
   }
