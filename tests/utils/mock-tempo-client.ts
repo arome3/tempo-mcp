@@ -272,10 +272,17 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
       return txHash;
     }),
 
+    // Tempo transaction support (for access key operations)
+    sendTempoTransaction: vi.fn().mockImplementation(() => {
+      maybeThrow('sendTempoTransaction');
+      return txHash;
+    }),
+
     // Public client (for read operations)
     publicClient: {
       getBlockNumber: vi.fn().mockResolvedValue(blockNumber),
       getBalance: vi.fn().mockResolvedValue(balance),
+      getStorageAt: vi.fn().mockResolvedValue('0x0000000000000000000000000000000000000000000000000000000000000000'),
       readContract: vi.fn().mockImplementation(
         ({
           functionName,

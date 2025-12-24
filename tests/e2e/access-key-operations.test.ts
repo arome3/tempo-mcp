@@ -111,7 +111,7 @@ describeE2E('E2E: Access Key Operations', () => {
 
       // Verify we can make calls to the precompile address
       // This just confirms the contract is accessible
-      expect(ACCOUNT_KEYCHAIN_ADDRESS).toBe('0xac00000000000000000000000000000000000000');
+      expect(ACCOUNT_KEYCHAIN_ADDRESS).toBe('0xaAAAaaAA00000000000000000000000000000000');
 
       // Try to get block number to ensure RPC is working
       const blockNumber = await publicClient.getBlockNumber();

@@ -13,9 +13,22 @@
  *
  * Based on Tempo's IAccountKeychain precompile interface.
  * @see https://docs.tempo.xyz/protocol/transactions/AccountKeychain
+ *
+ * ## Implementation Notes
+ *
+ * This service uses Tempo transaction type (0x76) for write operations to ensure
+ * the precompile can correctly identify the account's keychain. The tempo.ts SDK's
+ * `TransactionEnvelopeTempo` module is used to construct and sign transactions.
+ *
+ * **All Operations Working:**
+ * - `authorizeKey`: Creates new access keys
+ * - `revokeKey`: Revokes existing access keys
+ * - `updateSpendingLimit`: Updates spending limits for key-token pairs
+ * - `getKeyInfo`: Reads key information via direct storage reads
+ * - `getRemainingLimit`: View function for remaining spending limits
  */
 
-import { type Address, type Hash, keccak256, encodePacked } from 'viem';
+import { type Address, type Hash, keccak256, encodePacked, encodeFunctionData } from 'viem';
 import { getTempoClient, type TempoPublicClient } from './tempo-client.js';
 import { InternalError, BlockchainError } from '../utils/errors.js';
 
@@ -26,9 +39,10 @@ import { InternalError, BlockchainError } from '../utils/errors.js';
 /**
  * Account Keychain precompile address.
  * This is the protocol-level contract for managing access keys.
+ * @see https://docs.tempo.xyz/protocol/transactions/AccountKeychain
  */
 export const ACCOUNT_KEYCHAIN_ADDRESS =
-  '0xac00000000000000000000000000000000000000' as Address;
+  '0xaAAAaaAA00000000000000000000000000000000' as Address;
 
 // =============================================================================
 // Type Definitions
@@ -241,6 +255,34 @@ export const ACCOUNT_KEYCHAIN_ABI = [
       { name: 'newLimit', type: 'uint256', indexed: false },
     ],
   },
+  // ==========================================================================
+  // Errors
+  // ==========================================================================
+  {
+    name: 'KeyNotFound',
+    type: 'error',
+    inputs: [],
+  },
+  {
+    name: 'KeyRevoked',
+    type: 'error',
+    inputs: [],
+  },
+  {
+    name: 'KeyInactive',
+    type: 'error',
+    inputs: [],
+  },
+  {
+    name: 'UnauthorizedCaller',
+    type: 'error',
+    inputs: [],
+  },
+  {
+    name: 'KeyAlreadyExists',
+    type: 'error',
+    inputs: [],
+  },
 ] as const;
 
 // =============================================================================
@@ -334,47 +376,79 @@ export class AccessKeyService {
   /**
    * Get information about an access key.
    *
+   * Uses direct storage reads because the precompile's getKey() view function
+   * has a bug that returns all zeros even for valid keys.
+   *
+   * Storage layout: keys[account][keyId] is a packed struct at:
+   *   slot = keccak256(keyId . keccak256(account . 0))
+   *
+   * Packed format (right-aligned, 11 bytes):
+   *   - signatureType: uint8 (1 byte)
+   *   - expiry: uint64 (8 bytes)
+   *   - enforceLimits: bool (1 byte)
+   *   - isRevoked: bool (1 byte)
+   *
    * @param account - The account that authorized the key
    * @param keyId - The key ID to query
    * @returns Key information or null if not found
    */
   async getKeyInfo(account: Address, keyId: Address): Promise<AccessKeyInfo | null> {
     try {
-      const result = await this.publicClient.readContract({
+      // Compute storage slot: keccak256(keyId . keccak256(account . 0))
+      const slot1 = keccak256(
+        encodePacked(
+          ['bytes32', 'bytes32'],
+          [
+            `0x${account.slice(2).toLowerCase().padStart(64, '0')}` as `0x${string}`,
+            '0x0000000000000000000000000000000000000000000000000000000000000000',
+          ]
+        )
+      );
+
+      const slot2 = keccak256(
+        encodePacked(
+          ['bytes32', 'bytes32'],
+          [
+            `0x${keyId.slice(2).toLowerCase().padStart(64, '0')}` as `0x${string}`,
+            slot1,
+          ]
+        )
+      );
+
+      // Read storage directly
+      const storage = await this.publicClient.getStorageAt({
         address: ACCOUNT_KEYCHAIN_ADDRESS,
-        abi: ACCOUNT_KEYCHAIN_ABI,
-        functionName: 'getKey',
-        args: [account, keyId],
+        slot: slot2,
       });
 
-      const keyInfo = result as {
-        signatureType: number;
-        keyId: Address;
-        expiry: bigint;
-        enforceLimits: boolean;
-        isRevoked: boolean;
-      };
-
-      // Check if key exists (keyId will be zero address if not found)
-      if (keyInfo.keyId === '0x0000000000000000000000000000000000000000') {
+      // Check if slot is empty (key doesn't exist)
+      if (!storage || storage === '0x0000000000000000000000000000000000000000000000000000000000000000') {
         return null;
       }
 
+      // Decode packed storage (right-aligned)
+      // Layout: [padding...][isRevoked:1][enforceLimits:1][expiry:8][signatureType:1]
+      const storageHex = storage.slice(2);
+
+      // Read from right to left
+      const signatureType = parseInt(storageHex.slice(-2), 16);
+      const expiryHex = storageHex.slice(-18, -2);
+      const expiry = expiryHex ? parseInt(expiryHex, 16) : 0;
+      const enforceLimits = parseInt(storageHex.slice(-20, -18), 16) === 1;
+      const isRevoked = parseInt(storageHex.slice(-22, -20), 16) === 1;
+
       return {
-        signatureType: keyInfo.signatureType as SignatureType,
-        keyId: keyInfo.keyId,
-        expiry: Number(keyInfo.expiry),
-        enforceLimits: keyInfo.enforceLimits,
-        isRevoked: keyInfo.isRevoked,
+        signatureType: signatureType as SignatureType,
+        keyId: keyId,
+        expiry,
+        enforceLimits,
+        isRevoked,
       };
     } catch (error) {
-      // Contract might revert or return empty data if key doesn't exist
       const errorMessage = (error as Error).message || '';
-      // Handle: KeyNotFound error, empty data returned, or zero data response
       if (
         errorMessage.includes('KeyNotFound') ||
-        errorMessage.includes('returned no data') ||
-        errorMessage.includes('0x')
+        errorMessage.includes('returned no data')
       ) {
         return null;
       }
@@ -415,24 +489,33 @@ export class AccessKeyService {
    * Revoked keys cannot be used for signing and cannot be re-authorized.
    * This operation must be signed by the Root Key.
    *
+   * Uses Tempo transaction type (0x76) with proper root key signature
+   * to ensure the precompile can identify the correct keychain.
+   *
+   * **IMPORTANT:** Keys created with `expiry: 0` (never expire) cannot be revoked.
+   * The Tempo protocol requires `expiry > 0` for revocation to work.
+   * Plan for key expiry when creating keys that may need to be revoked.
+   *
    * @param keyId - The key ID to revoke
    * @returns Transaction result
+   * @throws Error if the key has expiry=0 (KeyNotFound error)
    * @throws Error if wallet not configured or transaction fails
    */
   async revokeAccessKey(keyId: Address): Promise<KeyOperationResult> {
-    const walletClient = this.client['walletClient'];
-    if (!walletClient) {
-      throw InternalError.walletNotConfigured();
-    }
-
     try {
-      const hash = await walletClient.writeContract({
-        address: ACCOUNT_KEYCHAIN_ADDRESS,
+      // Encode the revokeKey function call
+      const data = encodeFunctionData({
         abi: ACCOUNT_KEYCHAIN_ABI,
         functionName: 'revokeKey',
         args: [keyId],
-        feeToken: this.feeToken,
-      } as Parameters<typeof walletClient.writeContract>[0]);
+      });
+
+      // Send using Tempo transaction type (0x76) with root key signature
+      const hash = await this.client.sendTempoTransaction({
+        to: ACCOUNT_KEYCHAIN_ADDRESS,
+        data,
+        gas: 100_000n, // Conservative gas estimate for revoke operation
+      });
 
       const receipt = await this.client.waitForTransaction(hash);
 
@@ -443,19 +526,21 @@ export class AccessKeyService {
       };
     } catch (error) {
       const errorMessage = (error as Error).message || '';
-      if (errorMessage.includes('KeyNotFound')) {
+      if (errorMessage.includes('KeyNotFound') || errorMessage.includes('0x5f3f479c')) {
         throw BlockchainError.transactionReverted(
-          `Access key not found: ${keyId}. ${errorMessage}`
+          `Access key not found or cannot be revoked: ${keyId}. ` +
+            'Note: Keys created with expiry=0 (never expire) cannot be revoked. ' +
+            'Use a non-zero expiry when creating keys that may need revocation.'
         );
       }
-      if (errorMessage.includes('KeyAlreadyRevoked')) {
+      if (errorMessage.includes('KeyAlreadyRevoked') || errorMessage.includes('0x469537f1')) {
         throw BlockchainError.transactionReverted(
-          `Access key already revoked: ${keyId}. ${errorMessage}`
+          `Access key already revoked: ${keyId}.`
         );
       }
-      if (errorMessage.includes('UnauthorizedCaller')) {
+      if (errorMessage.includes('UnauthorizedCaller') || errorMessage.includes('0x5c427cd9')) {
         throw BlockchainError.transactionReverted(
-          `Unauthorized: only the Root Key can revoke access keys. ${errorMessage}`
+          `Unauthorized: only the Root Key can revoke access keys.`
         );
       }
       throw error;
@@ -467,10 +552,17 @@ export class AccessKeyService {
    *
    * This operation must be signed by the Root Key.
    *
+   * Uses Tempo transaction type (0x76) with proper root key signature
+   * to ensure the precompile can identify the correct keychain.
+   *
+   * **IMPORTANT:** Keys created with `expiry: 0` (never expire) may not support
+   * spending limit updates. Use a non-zero expiry when creating keys.
+   *
    * @param keyId - The key ID to update
    * @param token - The TIP-20 token address
    * @param newLimit - The new spending limit
    * @returns Transaction result
+   * @throws Error if the key has expiry=0 (KeyNotFound error)
    * @throws Error if wallet not configured or transaction fails
    */
   async updateSpendingLimit(
@@ -478,19 +570,20 @@ export class AccessKeyService {
     token: Address,
     newLimit: bigint
   ): Promise<KeyOperationResult> {
-    const walletClient = this.client['walletClient'];
-    if (!walletClient) {
-      throw InternalError.walletNotConfigured();
-    }
-
     try {
-      const hash = await walletClient.writeContract({
-        address: ACCOUNT_KEYCHAIN_ADDRESS,
+      // Encode the updateSpendingLimit function call
+      const data = encodeFunctionData({
         abi: ACCOUNT_KEYCHAIN_ABI,
         functionName: 'updateSpendingLimit',
         args: [keyId, token, newLimit],
-        feeToken: this.feeToken,
-      } as Parameters<typeof walletClient.writeContract>[0]);
+      });
+
+      // Send using Tempo transaction type (0x76) with root key signature
+      const hash = await this.client.sendTempoTransaction({
+        to: ACCOUNT_KEYCHAIN_ADDRESS,
+        data,
+        gas: 100_000n, // Conservative gas estimate for update operation
+      });
 
       const receipt = await this.client.waitForTransaction(hash);
 
@@ -501,19 +594,19 @@ export class AccessKeyService {
       };
     } catch (error) {
       const errorMessage = (error as Error).message || '';
-      if (errorMessage.includes('KeyNotFound')) {
+      if (errorMessage.includes('KeyNotFound') || errorMessage.includes('0x5f3f479c')) {
         throw BlockchainError.transactionReverted(
-          `Access key not found: ${keyId}. ${errorMessage}`
+          `Access key not found: ${keyId}. The key may not exist or may have been revoked.`
         );
       }
       if (errorMessage.includes('KeyInactive') || errorMessage.includes('KeyRevoked')) {
         throw BlockchainError.transactionReverted(
-          `Access key is inactive or revoked: ${keyId}. ${errorMessage}`
+          `Access key is inactive or revoked: ${keyId}.`
         );
       }
       if (errorMessage.includes('UnauthorizedCaller')) {
         throw BlockchainError.transactionReverted(
-          `Unauthorized: only the Root Key can update spending limits. ${errorMessage}`
+          `Unauthorized: only the Root Key can update spending limits.`
         );
       }
       throw error;
