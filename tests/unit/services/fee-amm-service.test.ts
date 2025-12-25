@@ -101,8 +101,9 @@ describe('FeeAmmService', () => {
         .map((item) => item.name);
 
       expect(functionNames).toContain('getPool');
-      expect(functionNames).toContain('balanceOf');
-      expect(functionNames).toContain('quote');
+      expect(functionNames).toContain('getPoolId');
+      expect(functionNames).toContain('totalSupply');
+      expect(functionNames).toContain('liquidityBalances');
     });
 
     it('should define FEE_AMM_ABI with required state-changing functions', () => {
@@ -110,7 +111,8 @@ describe('FeeAmmService', () => {
         .filter((item) => item.type === 'function')
         .map((item) => item.name);
 
-      expect(functionNames).toContain('mint');
+      // Note: Fee AMM uses single-sided liquidity via mintWithValidatorToken (not mint)
+      expect(functionNames).toContain('mintWithValidatorToken');
       expect(functionNames).toContain('burn');
     });
 
@@ -347,7 +349,9 @@ describe('FeeAmmService', () => {
       expect(result.hash).toBe(TEST_TX_HASHES.VALID);
       expect(result.blockNumber).toBeGreaterThan(0);
       expect(result.gasCost).toBeDefined();
-      expect(result.userTokenAdded).toBe(BigInt(10000 * 1e6));
+      // Note: Fee AMM uses single-sided liquidity (PathUSD only)
+      // userTokenAdded is always 0n as only validator token is deposited
+      expect(result.userTokenAdded).toBe(0n);
       expect(result.validatorTokenAdded).toBe(BigInt(10000 * 1e6));
     });
 

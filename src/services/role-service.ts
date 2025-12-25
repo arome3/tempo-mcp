@@ -405,7 +405,6 @@ export class RoleService {
     let pauseMembers: Address[] = [];
     let unpauseMembers: Address[] = [];
     let burnBlockedMembers: Address[] = [];
-    let enumerationSupported = true;
 
     try {
       const results = await Promise.all([
@@ -419,9 +418,7 @@ export class RoleService {
     } catch (error) {
       // If enumeration is not supported, continue with empty arrays
       const errorMessage = error instanceof Error ? error.message : String(error);
-      if (errorMessage.includes('enumeration is not supported')) {
-        enumerationSupported = false;
-      } else {
+      if (!errorMessage.includes('enumeration is not supported')) {
         throw error;
       }
     }

@@ -155,7 +155,7 @@ npx tempo-mcp
 
 **From source:**
 ```bash
-git clone https://github.com/arome/tempo-mcp.git
+git clone https://github.com/arome3/tempo-mcp
 cd tempo-mcp
 npm install
 npm run build
@@ -187,11 +187,26 @@ npx tempo-mcp
 
 ---
 
-## AI Client Integration
+## Installation with your IDE
+
+Select your MCP client below for detailed setup instructions.
+
+> **Note:** If you're using a client not listed here, you can still use tempo-mcp by manually adding the server configuration to your client's MCP settings.
+
+---
 
 ### Claude Desktop
 
-Add to `~/.config/Claude/claude_desktop_config.json` (macOS/Linux) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+Download and install [Claude Desktop](https://claude.ai/download) if you haven't already.
+
+**Manual Setup:**
+
+1. Open Claude Desktop
+2. Go to **Settings** (gear icon) → **Developer**
+3. Click **Edit Config** to open the configuration file
+   - macOS/Linux: `~/.config/Claude/claude_desktop_config.json`
+   - Windows: `%APPDATA%\Claude\claude_desktop_config.json`
+4. Add the following configuration:
 
 ```json
 {
@@ -201,17 +216,36 @@ Add to `~/.config/Claude/claude_desktop_config.json` (macOS/Linux) or `%APPDATA%
       "args": ["tempo-mcp"],
       "env": {
         "TEMPO_PRIVATE_KEY": "0x...",
-        "TEMPO_RPC_URL": "https://rpc.testnet.tempo.xyz",
-        "TEMPO_CHAIN_ID": "42429"
+        "TEMPO_RPC_URL": "https://rpc.testnet.tempo.xyz"
       }
     }
   }
 }
 ```
 
-### Cursor
+5. Save the file and restart Claude Desktop
 
-Add to your Cursor MCP settings:
+---
+
+### Claude Code (CLI)
+
+Install [Claude Code](https://docs.anthropic.com/en/docs/claude-code) if you haven't already.
+
+**1-Click Setup:**
+
+```bash
+claude mcp add tempo-mcp -e TEMPO_PRIVATE_KEY=0x...
+```
+
+**Manual Setup:**
+
+1. Open your terminal
+2. Run `claude mcp add tempo-mcp` to add the server
+3. Or edit the config file directly:
+   - macOS: `~/.claude/settings.json`
+   - Linux: `~/.claude/settings.json`
+   - Windows: `%USERPROFILE%\.claude\settings.json`
+4. Add the configuration:
 
 ```json
 {
@@ -227,7 +261,142 @@ Add to your Cursor MCP settings:
 }
 ```
 
+5. Verify with `/mcp` command inside Claude Code
+
+---
+
+### Cursor
+
+Download and install [Cursor](https://cursor.com) if you haven't already.
+
+**Manual Setup:**
+
+1. Open a project in Cursor and navigate to **Cursor Settings** (⌘+Shift+J on macOS)
+2. In the settings menu, go to the **MCP** section
+3. Click **New MCP Server**. This will open your `mcp.json` configuration file
+   - Global: `~/.cursor/mcp.json`
+   - Project-level: `.cursor/mcp.json` (in project root)
+4. Add the following configuration:
+
+```json
+{
+  "mcpServers": {
+    "tempo": {
+      "command": "npx",
+      "args": ["tempo-mcp"],
+      "env": {
+        "TEMPO_PRIVATE_KEY": "0x..."
+      }
+    }
+  }
+}
+```
+
+5. Save and restart Cursor
+
+> **Tip:** Project-level configs (`.cursor/mcp.json`) override global configs.
+
+---
+
+### Windsurf
+
+Download and install [Windsurf](https://codeium.com/windsurf) if you haven't already.
+
+**Manual Setup:**
+
+1. Open Windsurf and go to **Settings** (⌘+, on macOS)
+2. Navigate to **Cascade** → **Plugins**
+3. Click **View raw config** to open the MCP configuration file
+   - macOS: `~/.codeium/windsurf/mcp_config.json`
+   - Linux: `~/.config/.codeium/windsurf/mcp_config.json`
+   - Windows: `%USERPROFILE%\.codeium\windsurf\mcp_config.json`
+4. Add the following configuration:
+
+```json
+{
+  "mcpServers": {
+    "tempo": {
+      "command": "npx",
+      "args": ["tempo-mcp"],
+      "env": {
+        "TEMPO_PRIVATE_KEY": "0x..."
+      }
+    }
+  }
+}
+```
+
+5. Save and restart Windsurf
+
+---
+
+### VS Code + Continue
+
+Install the [Continue extension](https://marketplace.visualstudio.com/items?itemName=Continue.continue) in VS Code.
+
+**Manual Setup:**
+
+1. Open VS Code and click the Continue icon in the sidebar
+2. Click the gear icon → **Open config.yaml**
+   - macOS: `~/.continue/config.yaml`
+   - Linux: `~/.continue/config.yaml`
+   - Windows: `%USERPROFILE%\.continue\config.yaml`
+3. Add the following configuration (YAML format):
+
+```yaml
+mcpServers:
+  - name: tempo
+    command: npx
+    args:
+      - tempo-mcp
+    env:
+      TEMPO_PRIVATE_KEY: "0x..."
+```
+
+4. Save and reload VS Code
+
+> **Note:** MCP tools are only available in Continue's **Agent mode**.
+
+---
+
+### Cline
+
+Install the [Cline extension](https://marketplace.visualstudio.com/items?itemName=saoudrizwan.claude-dev) in VS Code.
+
+**Manual Setup:**
+
+1. Open VS Code and click the Cline icon in the sidebar
+2. Click the **MCP Servers** icon in the top navigation bar
+3. Select the **Configure** tab, then click **Advanced MCP Settings**
+4. This opens the config file at:
+   - macOS: `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
+   - Windows: `%APPDATA%\Code\User\globalStorage\saoudrizwan.claude-dev\settings\cline_mcp_settings.json`
+   - Linux: `~/.config/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json`
+5. Add the following configuration:
+
+```json
+{
+  "mcpServers": {
+    "tempo": {
+      "command": "npx",
+      "args": ["tempo-mcp"],
+      "env": {
+        "TEMPO_PRIVATE_KEY": "0x..."
+      },
+      "alwaysAllow": [],
+      "disabled": false
+    }
+  }
+}
+```
+
+6. Save and the server will be available immediately
+
+---
+
 ### Generic MCP Client
+
+For custom MCP clients or programmatic usage:
 
 ```typescript
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -657,7 +826,7 @@ Explore complete agent implementations in the `/examples` directory:
 ### Setup
 
 ```bash
-git clone https://github.com/arome/tempo-mcp.git
+git clone https://github.com/arome3/tempo-mcp
 cd tempo-mcp
 npm install
 ```

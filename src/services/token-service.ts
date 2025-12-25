@@ -204,14 +204,6 @@ export class TokenService {
   private parseTokenCreatedEvent(
     receipt: Awaited<ReturnType<ReturnType<typeof getTempoClient>['waitForTransaction']>>
   ): Address {
-    // TokenCreated event signature hash
-    const TOKEN_CREATED_TOPIC = '0x' + 'TokenCreated(address,uint256,string,string,string,address,address)'
-      .split('')
-      .reduce((hash, char) => {
-        // Simple check - we'll also try without this
-        return hash;
-      }, '');
-
     for (const log of receipt.logs) {
       // Method 1: Try standard decodeEventLog
       try {

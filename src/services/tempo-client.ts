@@ -16,7 +16,6 @@ import {
   http,
   publicActions,
   walletActions,
-  encodeFunctionData,
   type Address,
   type Hash,
   type TransactionReceipt,
