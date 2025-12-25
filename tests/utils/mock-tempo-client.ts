@@ -377,15 +377,22 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
             return Promise.resolve(rewardsDefaults.totalDistributed);
           }
           // Handle Fee AMM contract calls
-          if (functionName === 'getPool') {
-            return Promise.resolve([
-              feeAmmDefaults.reserveUser,
-              feeAmmDefaults.reserveValidator,
-              feeAmmDefaults.totalLpSupply,
-            ]);
+          if (functionName === 'getPoolId') {
+            // Return a mock pool ID (bytes32)
+            return Promise.resolve('0x' + 'ab'.repeat(32) as `0x${string}`);
           }
-          if (functionName === 'quote') {
-            return Promise.resolve(feeAmmDefaults.quoteOutput);
+          if (functionName === 'getPool') {
+            // Returns tuple { reserveUserToken, reserveValidatorToken }
+            return Promise.resolve({
+              reserveUserToken: feeAmmDefaults.reserveUser,
+              reserveValidatorToken: feeAmmDefaults.reserveValidator,
+            });
+          }
+          if (functionName === 'totalSupply') {
+            return Promise.resolve(feeAmmDefaults.totalLpSupply);
+          }
+          if (functionName === 'liquidityBalances') {
+            return Promise.resolve(feeAmmDefaults.lpBalance);
           }
           if (functionName === 'allowance') {
             return Promise.resolve(feeAmmDefaults.allowance);

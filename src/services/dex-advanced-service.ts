@@ -442,10 +442,10 @@ export class DexAdvancedService {
     const baseSpendAmount = amount;
     const quoteSpendAmount = this.calculateQuoteAmount(amount, Math.max(tick, flipTick));
 
-    await Promise.all([
-      this.approveToken(token, baseSpendAmount),
-      this.approveToken(PATH_USD_ADDRESS, quoteSpendAmount),
-    ]);
+    // Approve tokens sequentially to avoid nonce collision
+    // Running in parallel can cause "replacement transaction underpriced" errors
+    await this.approveToken(token, baseSpendAmount);
+    await this.approveToken(PATH_USD_ADDRESS, quoteSpendAmount);
 
     // Create the flip order placement call
     const calls = [
@@ -818,11 +818,19 @@ export class DexAdvancedService {
     const targetOwner = owner ?? client.getAddress();
 
     // Get the latest order ID to know the range
-    const latestOrderId = await publicClient.readContract({
-      address: DEX_ADDRESS,
-      abi: DEX_ABI,
-      functionName: 'activeOrderId',
-    }) as bigint;
+    let latestOrderId: bigint;
+    try {
+      latestOrderId = await publicClient.readContract({
+        address: DEX_ADDRESS,
+        abi: DEX_ABI,
+        functionName: 'activeOrderId',
+      }) as bigint;
+    } catch (error) {
+      // Contract may not be initialized or accessible - return empty list
+      // This can happen on testnets where the DEX isn't fully deployed
+      console.warn('Failed to query activeOrderId, DEX may not be initialized:', error);
+      return [];
+    }
 
     const orders: Order[] = [];
 

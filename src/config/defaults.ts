@@ -68,6 +68,11 @@ export const defaultConfig: TempoMcpConfig = {
     aliases: {
       // Testnet AlphaUSD token address
       AlphaUSD: '0x20c0000000000000000000000000000000000001',
+      // PathUSD - the validator/quote token for all trading pairs
+      PathUSD: '0x20c0000000000000000000000000000000000000',
+      // Common alias variations
+      pathUSD: '0x20c0000000000000000000000000000000000000',
+      PATHUSD: '0x20c0000000000000000000000000000000000000',
     },
   },
 

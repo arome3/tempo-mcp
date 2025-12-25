@@ -68,11 +68,25 @@ const ERC20_APPROVAL_ABI = [
 
 /**
  * Fee AMM ABI for pool and liquidity operations.
+ *
+ * Note: The Fee AMM uses single-sided liquidity (PathUSD only via mintWithValidatorToken).
+ * The `mint` function for dual-token deposits does not exist on this contract.
+ * Swaps use a fixed rate of 0.9985 (0.15% fee) - no quote function is needed.
  */
 export const FEE_AMM_ABI = [
   // ===========================================================================
   // View Functions
   // ===========================================================================
+  {
+    name: 'getPoolId',
+    type: 'function',
+    stateMutability: 'pure',
+    inputs: [
+      { name: 'userToken', type: 'address' },
+      { name: 'validatorToken', type: 'address' },
+    ],
+    outputs: [{ type: 'bytes32' }],
+  },
   {
     name: 'getPool',
     type: 'function',
@@ -82,47 +96,46 @@ export const FEE_AMM_ABI = [
       { name: 'validatorToken', type: 'address' },
     ],
     outputs: [
-      { name: 'reserveUser', type: 'uint256' },
-      { name: 'reserveValidator', type: 'uint256' },
-      { name: 'totalLpSupply', type: 'uint256' },
+      {
+        type: 'tuple',
+        components: [
+          { name: 'reserveUserToken', type: 'uint128' },
+          { name: 'reserveValidatorToken', type: 'uint128' },
+        ],
+      },
     ],
   },
   {
-    name: 'balanceOf',
+    name: 'totalSupply',
     type: 'function',
     stateMutability: 'view',
-    inputs: [
-      { name: 'userToken', type: 'address' },
-      { name: 'validatorToken', type: 'address' },
-      { name: 'account', type: 'address' },
-    ],
-    outputs: [{ name: 'balance', type: 'uint256' }],
+    inputs: [{ name: 'poolId', type: 'bytes32' }],
+    outputs: [{ type: 'uint256' }],
   },
   {
-    name: 'quote',
+    name: 'liquidityBalances',
     type: 'function',
     stateMutability: 'view',
     inputs: [
-      { name: 'fromToken', type: 'address' },
-      { name: 'toToken', type: 'address' },
-      { name: 'amountIn', type: 'uint256' },
+      { name: 'poolId', type: 'bytes32' },
+      { name: 'user', type: 'address' },
     ],
-    outputs: [{ name: 'amountOut', type: 'uint256' }],
+    outputs: [{ type: 'uint256' }],
   },
   // ===========================================================================
   // State-Changing Functions
   // ===========================================================================
   {
-    name: 'mint',
+    name: 'mintWithValidatorToken',
     type: 'function',
     stateMutability: 'nonpayable',
     inputs: [
       { name: 'userToken', type: 'address' },
       { name: 'validatorToken', type: 'address' },
-      { name: 'amountUser', type: 'uint256' },
-      { name: 'amountValidator', type: 'uint256' },
+      { name: 'amountValidatorToken', type: 'uint256' },
+      { name: 'to', type: 'address' },
     ],
-    outputs: [{ name: 'lpTokens', type: 'uint256' }],
+    outputs: [{ name: 'liquidity', type: 'uint256' }],
   },
   {
     name: 'burn',
@@ -131,11 +144,12 @@ export const FEE_AMM_ABI = [
     inputs: [
       { name: 'userToken', type: 'address' },
       { name: 'validatorToken', type: 'address' },
-      { name: 'lpAmount', type: 'uint256' },
+      { name: 'liquidity', type: 'uint256' },
+      { name: 'to', type: 'address' },
     ],
     outputs: [
-      { name: 'amountUser', type: 'uint256' },
-      { name: 'amountValidator', type: 'uint256' },
+      { name: 'amountUserToken', type: 'uint256' },
+      { name: 'amountValidatorToken', type: 'uint256' },
     ],
   },
   // ===========================================================================
@@ -165,6 +179,21 @@ export const FEE_AMM_ABI = [
       { name: 'amountValidator', type: 'uint256', indexed: false },
     ],
   },
+  // ===========================================================================
+  // Errors
+  // ===========================================================================
+  { name: 'IdenticalAddresses', type: 'error', inputs: [] },
+  { name: 'ZeroAddress', type: 'error', inputs: [] },
+  { name: 'PoolExists', type: 'error', inputs: [] },
+  { name: 'PoolDoesNotExist', type: 'error', inputs: [] },
+  { name: 'InvalidToken', type: 'error', inputs: [] },
+  { name: 'InsufficientLiquidity', type: 'error', inputs: [] },
+  { name: 'OnlyProtocol', type: 'error', inputs: [] },
+  { name: 'InsufficientPoolBalance', type: 'error', inputs: [] },
+  { name: 'InsufficientReserves', type: 'error', inputs: [] },
+  { name: 'InsufficientLiquidityBalance', type: 'error', inputs: [] },
+  { name: 'UnknownSelector', type: 'error', inputs: [{ name: 'selector', type: 'bytes4' }] },
+  { name: 'InvalidAmount', type: 'error', inputs: [] },
 ] as const;
 
 // =============================================================================
@@ -272,20 +301,35 @@ export class FeeAmmService {
   ): Promise<PoolInfo> {
     const valToken = validatorToken ?? PATH_USD_ADDRESS;
 
-    const result = await this.publicClient.readContract({
+    // First get the pool ID
+    const poolId = await this.publicClient.readContract({
       address: FEE_AMM_ADDRESS,
       abi: FEE_AMM_ABI,
-      functionName: 'getPool',
+      functionName: 'getPoolId',
       args: [userToken, valToken],
-    });
+    }) as `0x${string}`;
 
-    const [reserveUser, reserveValidator, totalLpSupply] = result as [bigint, bigint, bigint];
+    // Get pool reserves and total supply in parallel
+    const [poolResult, totalLpSupply] = await Promise.all([
+      this.publicClient.readContract({
+        address: FEE_AMM_ADDRESS,
+        abi: FEE_AMM_ABI,
+        functionName: 'getPool',
+        args: [userToken, valToken],
+      }) as Promise<{ reserveUserToken: bigint; reserveValidatorToken: bigint }>,
+      this.publicClient.readContract({
+        address: FEE_AMM_ADDRESS,
+        abi: FEE_AMM_ABI,
+        functionName: 'totalSupply',
+        args: [poolId],
+      }) as Promise<bigint>,
+    ]);
 
     return {
       userToken,
       validatorToken: valToken,
-      reserveUser,
-      reserveValidator,
+      reserveUser: poolResult.reserveUserToken,
+      reserveValidator: poolResult.reserveValidatorToken,
       totalLpSupply,
       swapRate: FEE_SWAP_RATE,
     };
@@ -307,13 +351,21 @@ export class FeeAmmService {
     const valToken = validatorToken ?? PATH_USD_ADDRESS;
     const targetAccount = account ?? this.client.getAddress();
 
+    // Get pool ID first
+    const poolId = await this.publicClient.readContract({
+      address: FEE_AMM_ADDRESS,
+      abi: FEE_AMM_ABI,
+      functionName: 'getPoolId',
+      args: [userToken, valToken],
+    }) as `0x${string}`;
+
     // Fetch LP balance and pool info in parallel
     const [lpBalance, poolInfo] = await Promise.all([
       this.publicClient.readContract({
         address: FEE_AMM_ADDRESS,
         abi: FEE_AMM_ABI,
-        functionName: 'balanceOf',
-        args: [userToken, valToken, targetAccount],
+        functionName: 'liquidityBalances',
+        args: [poolId, targetAccount],
       }) as Promise<bigint>,
       this.getPoolInfo(userToken, valToken),
     ]);
@@ -343,24 +395,23 @@ export class FeeAmmService {
   /**
    * Estimate fee swap output.
    *
-   * @param fromToken - Token to swap from
-   * @param toToken - Token to swap to
+   * The Fee AMM uses a fixed swap rate of 0.9985 (0.15% protocol fee).
+   * This method calculates the output locally without a contract call.
+   *
+   * @param _fromToken - Token to swap from (unused, rate is fixed)
+   * @param _toToken - Token to swap to (unused, rate is fixed)
    * @param amountIn - Amount to swap
-   * @returns Expected output amount
+   * @returns Expected output amount after applying the fixed rate
    */
   async estimateFeeSwap(
-    fromToken: Address,
-    toToken: Address,
+    _fromToken: Address,
+    _toToken: Address,
     amountIn: bigint
   ): Promise<bigint> {
-    const amountOut = await this.publicClient.readContract({
-      address: FEE_AMM_ADDRESS,
-      abi: FEE_AMM_ABI,
-      functionName: 'quote',
-      args: [fromToken, toToken, amountIn],
-    });
-
-    return amountOut as bigint;
+    // Fee AMM uses a fixed rate of 0.9985 (0.15% protocol fee)
+    // Calculate: amountOut = amountIn * 9985 / 10000
+    const amountOut = (amountIn * 9985n) / 10000n;
+    return amountOut;
   }
 
   // ===========================================================================
@@ -370,9 +421,13 @@ export class FeeAmmService {
   /**
    * Add liquidity to a fee pool.
    *
-   * Both tokens must be approved to the Fee AMM contract before calling.
+   * The Fee AMM uses single-sided liquidity provision - only PathUSD (validator token)
+   * is deposited. User token reserves accumulate from fee conversions.
    * The first liquidity provider will have 1000 LP tokens burned to prevent
    * manipulation attacks.
+   *
+   * Note: The `amountUser` parameter is accepted for API compatibility but ignored.
+   * Only `amountValidator` (PathUSD) is actually deposited.
    *
    * @param params - Liquidity parameters
    * @returns Transaction result with LP tokens minted
@@ -389,20 +444,20 @@ export class FeeAmmService {
       throw InternalError.walletNotConfigured();
     }
 
-    const { userToken, amountUser, amountValidator } = params;
+    const { userToken, amountValidator } = params;
     const validatorToken = params.validatorToken ?? PATH_USD_ADDRESS;
 
     try {
-      // Approve both tokens to Fee AMM
-      await this.approveToken(userToken, amountUser);
+      // Only approve validator token (PathUSD) - single-sided liquidity
       await this.approveToken(validatorToken, amountValidator);
 
-      // Add liquidity
+      // Add liquidity using mintWithValidatorToken (single-sided deposit)
+      const to = this.client.getAddress();
       const hash = await walletClient.writeContract({
         address: FEE_AMM_ADDRESS,
         abi: FEE_AMM_ABI,
-        functionName: 'mint',
-        args: [userToken, validatorToken, amountUser, amountValidator],
+        functionName: 'mintWithValidatorToken',
+        args: [userToken, validatorToken, amountValidator, to],
         feeToken: this.feeToken,
       } as Parameters<typeof walletClient.writeContract>[0]);
 
@@ -416,19 +471,19 @@ export class FeeAmmService {
         blockNumber: Number(receipt.blockNumber),
         gasCost: receipt.gasUsed.toString(),
         lpTokensMinted,
-        userTokenAdded: amountUser,
+        userTokenAdded: 0n, // Single-sided: no user token deposited
         validatorTokenAdded: amountValidator,
       };
     } catch (error) {
       const errorMessage = (error as Error).message || '';
       if (errorMessage.includes('InsufficientBalance')) {
         throw BlockchainError.transactionReverted(
-          'Insufficient token balance to add liquidity'
+          'Insufficient PathUSD balance to add liquidity'
         );
       }
       if (errorMessage.includes('InsufficientAllowance')) {
         throw BlockchainError.transactionReverted(
-          'Token approval required before adding liquidity'
+          'PathUSD approval required before adding liquidity'
         );
       }
       throw error;
@@ -458,11 +513,13 @@ export class FeeAmmService {
     const validatorToken = params.validatorToken ?? PATH_USD_ADDRESS;
 
     try {
+      // Burn LP tokens and send underlying tokens to the caller
+      const to = this.client.getAddress();
       const hash = await walletClient.writeContract({
         address: FEE_AMM_ADDRESS,
         abi: FEE_AMM_ABI,
         functionName: 'burn',
-        args: [userToken, validatorToken, lpAmount],
+        args: [userToken, validatorToken, lpAmount, to],
         feeToken: this.feeToken,
       } as Parameters<typeof walletClient.writeContract>[0]);
 

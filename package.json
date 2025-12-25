@@ -5,6 +5,12 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "bin": {
     "tempo-mcp": "./dist/index.js"
   },
@@ -15,12 +21,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/arome/tempo-mcp.git"
+    "url": "https://github.com/arome3/tempo-mcp"
   },
   "bugs": {
-    "url": "https://github.com/arome/tempo-mcp/issues"
+    "url": "https://github.com/arome3/tempo-mcp/issues"
   },
-  "homepage": "https://github.com/arome/tempo-mcp#readme",
+  "homepage": "https://github.com/arome3/tempo-mcp#readme",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsup src/index.ts --format esm --dts --clean",
@@ -33,7 +39,8 @@
     "format": "prettier --write src/",
     "typecheck": "tsc --noEmit",
     "inspector": "npx @modelcontextprotocol/inspector node dist/index.js",
-    "inspector:dev": "npx @modelcontextprotocol/inspector npx tsx src/index.ts"
+    "inspector:dev": "npx @modelcontextprotocol/inspector npx tsx src/index.ts",
+    "prepare": "npm run build"
   },
   "engines": {
     "node": ">=20.0.0"
