@@ -1,5 +1,7 @@
 # tempo-mcp
 
+[![npm](https://img.shields.io/npm/v/tempo-mcp)](https://npmjs.com/package/tempo-mcp)
+
 **MCP server for Tempo blockchain stablecoin payments** — Enable AI agents to autonomously execute real-world payments.
 
 > **Testnet Only** — This MCP currently operates on Tempo testnet. No real funds are used. Perfect for experimentation and development!
