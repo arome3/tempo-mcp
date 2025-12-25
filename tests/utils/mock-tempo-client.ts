@@ -326,6 +326,34 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
             return Promise.resolve(tokenSymbol);
           }
           // Handle rewards-related contract calls
+          // userRewardInfo returns (rewardRecipient, rewardPerToken, rewardBalance)
+          // - rewardRecipient != 0x0 means user is opted in
+          // - rewardBalance is pending claimable rewards
+          if (functionName === 'userRewardInfo') {
+            const zeroAddress = '0x0000000000000000000000000000000000000000';
+            // Determine recipient:
+            // - If explicit rewardRecipient is set, use it (allows testing specific recipient)
+            // - Otherwise, if opted in, use caller's address
+            // - If not opted in, use zero address
+            let recipient: string;
+            if (rewardsDefaults.rewardRecipient !== null) {
+              recipient = rewardsDefaults.rewardRecipient;
+            } else if (rewardsDefaults.isOptedIn) {
+              recipient = TEST_ADDRESSES.VALID;
+            } else {
+              recipient = zeroAddress;
+            }
+            return Promise.resolve([
+              recipient, // rewardRecipient
+              BigInt(0), // rewardPerToken (not used in our tests)
+              rewardsDefaults.pendingRewards, // rewardBalance (pending rewards)
+            ]);
+          }
+          // optedInSupply returns total supply opted into rewards
+          if (functionName === 'optedInSupply') {
+            return Promise.resolve(rewardsDefaults.totalOptedInSupply);
+          }
+          // Legacy function names for backwards compatibility in other tests
           if (functionName === 'isOptedInRewards') {
             return Promise.resolve(rewardsDefaults.isOptedIn);
           }

@@ -53,6 +53,7 @@ Then ask Claude: *"What's my AlphaUSD balance?"*
 | "Revoke access key 0x..." | Permanently disable a session key |
 | "What's my reward status for AlphaUSD?" | Check opt-in status and pending rewards |
 | "Opt into rewards for AlphaUSD" | Start earning pro-rata token rewards |
+| "Distribute 1000 AlphaUSD rewards" | Distribute rewards to opted-in holders |
 | "Claim my pending rewards" | Claim accrued rewards to your wallet |
 | "What's the Fee AMM pool info for AlphaUSD?" | Check pool reserves and LP supply |
 | "Add 1000 AlphaUSD liquidity to the Fee AMM" | Provide liquidity to earn conversion fees |
@@ -328,9 +329,12 @@ const result = await client.callTool({
 | `opt_in_rewards` | Opt into token rewards program | `token` |
 | `opt_out_rewards` | Opt out of rewards (optionally claim pending) | `token`, `claimPending?` |
 | `claim_rewards` | Claim pending rewards | `token` |
+| `distribute_rewards` | Distribute rewards to opted-in holders (issuer) | `token`, `amount`, `duration?` |
 | `get_pending_rewards` | Check pending reward amount | `token`, `address?` |
 | `set_reward_recipient` | Set auto-forward address for rewards | `token`, `recipient` |
 | `get_reward_status` | Get full reward status and token stats | `token`, `address?` |
+
+> **Duration**: Set `duration=0` for instant distribution. Time-based streaming rewards (duration > 0) are planned for future protocol updates.
 
 ### Exchange Tools
 

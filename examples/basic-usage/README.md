@@ -59,6 +59,26 @@ Claude: [calls send_payment]
 Memo: INV-2024-001 embedded for reconciliation.
 ```
 
+### Distribute Rewards
+
+```
+User: Distribute 1000 AlphaUSD as rewards to token holders
+
+Claude: [calls distribute_rewards]
+{
+  "token": "AlphaUSD",
+  "amount": "1000",
+  "duration": 0
+}
+
+✅ Rewards distributed!
+- Amount: 1,000.00 AlphaUSD
+- Distribution: Instant
+- Transaction: 0xdef456...
+
+All opted-in holders can now claim their proportional share.
+```
+
 ---
 
 ## Configuration
@@ -80,6 +100,9 @@ TEMPO_DEFAULT_TOKEN=AlphaUSD
 | `get_balance` | Check token balance |
 | `send_payment` | Send stablecoin transfer |
 | `get_transaction` | Verify transaction status |
+| `opt_in_rewards` | Opt into token rewards |
+| `claim_rewards` | Claim pending rewards |
+| `distribute_rewards` | Distribute rewards (issuer) |
 
 ---
 

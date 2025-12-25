@@ -200,6 +200,59 @@ export const setRewardRecipientOutputSchema = z.object({
 export type SetRewardRecipientOutput = z.infer<typeof setRewardRecipientOutputSchema>;
 
 // =============================================================================
+// distribute_rewards Schemas
+// =============================================================================
+
+/**
+ * Input schema for the distribute_rewards tool.
+ *
+ * Note: Time-based streaming rewards (duration > 0) are planned for a future
+ * Tempo protocol upgrade. Currently, only instant rewards (duration = 0) are supported.
+ */
+export const distributeRewardsInputSchema = {
+  token: tokenAddressSchema.describe('TIP-20 token to distribute rewards for'),
+  amount: z
+    .string()
+    .min(1)
+    .describe('Amount of tokens to distribute as rewards (in human-readable format, e.g., "1000")'),
+  duration: z
+    .number()
+    .int()
+    .min(0)
+    .optional()
+    .default(0)
+    .describe(
+      'Duration in seconds over which to distribute rewards. Currently only instant rewards (0) are supported. ' +
+      'Time-based streaming rewards are planned for a future Tempo protocol upgrade.'
+    ),
+};
+
+export const distributeRewardsInputZodSchema = z.object(distributeRewardsInputSchema);
+export type DistributeRewardsInput = z.infer<typeof distributeRewardsInputZodSchema>;
+
+/**
+ * Output schema for successful distribute_rewards response.
+ */
+export const distributeRewardsOutputSchema = z.object({
+  success: z.literal(true),
+  transactionHash: z.string(),
+  blockNumber: z.number(),
+  token: z.string(),
+  funder: z.string(),
+  rewardId: z.string(),
+  amount: z.string(),
+  amountFormatted: z.string(),
+  durationSeconds: z.number(),
+  durationFormatted: z.string(),
+  gasCost: z.string(),
+  explorerUrl: z.string(),
+  message: z.string(),
+  timestamp: z.string(),
+});
+
+export type DistributeRewardsOutput = z.infer<typeof distributeRewardsOutputSchema>;
+
+// =============================================================================
 // get_reward_status Schemas
 // =============================================================================
 
@@ -367,6 +420,51 @@ export function createSetRewardRecipientResponse(data: {
     message: isClearing
       ? 'Reward recipient cleared. Rewards will now be sent to your account.'
       : `Reward recipient set. All future claimed rewards will be forwarded to ${data.recipient}.`,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+/**
+ * Create a response for distribute_rewards.
+ */
+export function createDistributeRewardsResponse(data: {
+  transactionHash: string;
+  blockNumber: number;
+  token: string;
+  funder: string;
+  rewardId: string;
+  amount: string;
+  amountFormatted: string;
+  durationSeconds: number;
+  gasCost: string;
+  explorerUrl: string;
+}): DistributeRewardsOutput {
+  // Format duration in human-readable format
+  let durationFormatted: string;
+  let message: string;
+
+  if (data.durationSeconds === 0) {
+    durationFormatted = 'instant';
+    message = `Successfully distributed ${data.amountFormatted} instantly to opted-in holders proportional to their balances.`;
+  } else if (data.durationSeconds < 60) {
+    durationFormatted = `${data.durationSeconds} seconds`;
+    message = `Successfully started reward distribution of ${data.amountFormatted} over ${durationFormatted}. Opted-in holders will receive proportional rewards.`;
+  } else if (data.durationSeconds < 3600) {
+    durationFormatted = `${Math.round(data.durationSeconds / 60)} minutes`;
+    message = `Successfully started reward distribution of ${data.amountFormatted} over ${durationFormatted}. Opted-in holders will receive proportional rewards.`;
+  } else if (data.durationSeconds < 86400) {
+    durationFormatted = `${Math.round(data.durationSeconds / 3600)} hours`;
+    message = `Successfully started reward distribution of ${data.amountFormatted} over ${durationFormatted}. Opted-in holders will receive proportional rewards.`;
+  } else {
+    durationFormatted = `${Math.round(data.durationSeconds / 86400)} days`;
+    message = `Successfully started reward distribution of ${data.amountFormatted} over ${durationFormatted}. Opted-in holders will receive proportional rewards.`;
+  }
+
+  return {
+    success: true,
+    ...data,
+    durationFormatted,
+    message,
     timestamp: new Date().toISOString(),
   };
 }

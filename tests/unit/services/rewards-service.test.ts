@@ -73,20 +73,14 @@ describe('RewardsService', () => {
         .filter((item) => item.type === 'function')
         .map((item) => item.name);
 
-      // Write functions
-      expect(functionNames).toContain('optInRewards');
-      expect(functionNames).toContain('optOutRewards');
+      // Write functions (opt-in/out use setRewardRecipient internally)
       expect(functionNames).toContain('claimRewards');
       expect(functionNames).toContain('setRewardRecipient');
+      expect(functionNames).toContain('startReward');
 
-      // View functions
-      expect(functionNames).toContain('pendingRewards');
-      expect(functionNames).toContain('rewardRecipient');
-      expect(functionNames).toContain('isOptedInRewards');
-      expect(functionNames).toContain('totalOptedInSupply');
-      expect(functionNames).toContain('optedInBalance');
-      expect(functionNames).toContain('totalRewardsDistributed');
-      expect(functionNames).toContain('totalRewardsClaimed');
+      // View functions (userRewardInfo replaces multiple individual view functions)
+      expect(functionNames).toContain('userRewardInfo');
+      expect(functionNames).toContain('optedInSupply');
     });
 
     it('should define reward-related events', () => {
@@ -232,10 +226,13 @@ describe('RewardsService', () => {
   // ===========================================================================
 
   describe('getOptedInBalance', () => {
-    it('should return opted-in balance', async () => {
+    it('should return opted-in balance when user is opted in', async () => {
       const expectedBalance = BigInt(1000 * 1e6);
       setMockClient(
-        createMockTempoClient({ rewards: { optedInBalance: expectedBalance } })
+        createMockTempoClient({
+          balance: expectedBalance,
+          rewards: { isOptedIn: true, optedInBalance: expectedBalance },
+        })
       );
       rewardsService = new RewardsService();
 
@@ -245,6 +242,22 @@ describe('RewardsService', () => {
 
       expect(result).toBe(expectedBalance);
     });
+
+    it('should return 0n when user is not opted in', async () => {
+      setMockClient(
+        createMockTempoClient({
+          balance: BigInt(1000 * 1e6),
+          rewards: { isOptedIn: false },
+        })
+      );
+      rewardsService = new RewardsService();
+
+      const result = await rewardsService.getOptedInBalance(
+        TEST_TOKENS.ALPHA_USD as `0x${string}`
+      );
+
+      expect(result).toBe(BigInt(0));
+    });
   });
 
   // ===========================================================================
@@ -252,18 +265,16 @@ describe('RewardsService', () => {
   // ===========================================================================
 
   describe('getTotalClaimed', () => {
-    it('should return total claimed amount', async () => {
-      const expectedClaimed = BigInt(250 * 1e6);
-      setMockClient(
-        createMockTempoClient({ rewards: { totalClaimed: expectedClaimed } })
-      );
+    it('should return 0n since total claimed is not tracked in contract', async () => {
+      setMockClient(createMockTempoClient());
       rewardsService = new RewardsService();
 
       const result = await rewardsService.getTotalClaimed(
         TEST_TOKENS.ALPHA_USD as `0x${string}`
       );
 
-      expect(result).toBe(expectedClaimed);
+      // getTotalClaimed returns 0n because the ITIP20 interface doesn't expose this data
+      expect(result).toBe(BigInt(0));
     });
   });
 
@@ -294,20 +305,16 @@ describe('RewardsService', () => {
   // ===========================================================================
 
   describe('getTotalDistributed', () => {
-    it('should return total distributed amount', async () => {
-      const expectedDistributed = BigInt(100000 * 1e6);
-      setMockClient(
-        createMockTempoClient({
-          rewards: { totalDistributed: expectedDistributed },
-        })
-      );
+    it('should return 0n since total distributed is not tracked in contract', async () => {
+      setMockClient(createMockTempoClient());
       rewardsService = new RewardsService();
 
       const result = await rewardsService.getTotalDistributed(
         TEST_TOKENS.ALPHA_USD as `0x${string}`
       );
 
-      expect(result).toBe(expectedDistributed);
+      // getTotalDistributed returns 0n because the ITIP20 interface doesn't expose this data
+      expect(result).toBe(BigInt(0));
     });
   });
 
@@ -325,9 +332,7 @@ describe('RewardsService', () => {
             pendingRewards: BigInt(100 * 1e6),
             optedInBalance: BigInt(1000 * 1e6),
             rewardRecipient: TEST_ADDRESSES.VALID_2,
-            totalClaimed: BigInt(50 * 1e6),
             totalOptedInSupply: BigInt(1000000 * 1e6),
-            totalDistributed: BigInt(10000 * 1e6),
           },
         })
       );
@@ -342,9 +347,10 @@ describe('RewardsService', () => {
       expect(status.optedInBalance).toBe(BigInt(1000 * 1e6));
       expect(status.totalBalance).toBe(BigInt(1000 * 1e6));
       expect(status.rewardRecipient).toBe(TEST_ADDRESSES.VALID_2);
-      expect(status.totalClaimed).toBe(BigInt(50 * 1e6));
+      // totalClaimed and totalDistributed are not tracked in contract, return 0n
+      expect(status.totalClaimed).toBe(BigInt(0));
       expect(status.tokenStats.totalOptedInSupply).toBe(BigInt(1000000 * 1e6));
-      expect(status.tokenStats.totalDistributed).toBe(BigInt(10000 * 1e6));
+      expect(status.tokenStats.totalDistributed).toBe(BigInt(0));
     });
 
     it('should return status for non-opted-in user', async () => {

@@ -10,15 +10,17 @@
  * - get_pending_rewards: Check pending reward balance (Low risk)
  * - set_reward_recipient: Set auto-forward address for rewards (Medium risk)
  * - get_reward_status: Get comprehensive reward status (Low risk)
+ * - distribute_rewards: Distribute rewards to opted-in holders (High risk)
  *
  * Rewards Model:
+ * - Token issuers/funders can distribute rewards via distribute_rewards
  * - Holders must explicitly opt in to receive rewards
  * - Rewards are distributed pro-rata based on opted-in balances
  * - Rewards can be claimed or auto-forwarded to a designated recipient
  */
 
 import type { Address } from 'viem';
-import { formatUnits } from 'viem';
+import { formatUnits, parseUnits } from 'viem';
 import { server } from '../../server.js';
 import { getConfig } from '../../config/index.js';
 import { getRewardsService } from '../../services/rewards-service.js';
@@ -35,6 +37,7 @@ import {
   getPendingRewardsInputSchema,
   setRewardRecipientInputSchema,
   getRewardStatusInputSchema,
+  distributeRewardsInputSchema,
   // Response helpers
   createOptInRewardsResponse,
   createOptOutRewardsResponse,
@@ -42,6 +45,7 @@ import {
   createGetPendingRewardsResponse,
   createSetRewardRecipientResponse,
   createGetRewardStatusResponse,
+  createDistributeRewardsResponse,
   createRewardsErrorResponse,
   // Types
   type OptInRewardsInput,
@@ -50,6 +54,7 @@ import {
   type GetPendingRewardsInput,
   type SetRewardRecipientInput,
   type GetRewardStatusInput,
+  type DistributeRewardsInput,
 } from './schemas.js';
 
 // =============================================================================
@@ -66,6 +71,7 @@ export function registerRewardsTools(): void {
   registerGetPendingRewardsTool();
   registerSetRewardRecipientTool();
   registerGetRewardStatusTool();
+  registerDistributeRewardsTool();
 }
 
 // =============================================================================
@@ -133,6 +139,36 @@ function registerOptInRewardsTool(): void {
       } catch (error) {
         const normalized = normalizeError(error);
         const durationMs = Date.now() - ctx.startTime;
+        const errorMessage = (error as Error).message || '';
+
+        // Check for Unauthorized error - means rewards not enabled for this token
+        if (errorMessage.includes('0xaa4bc69a') || errorMessage.includes('Unauthorized')) {
+          await security.logFailure({
+            requestId: ctx.requestId,
+            tool: 'opt_in_rewards',
+            arguments: logArgs,
+            durationMs,
+            errorMessage: 'Rewards not enabled for this token',
+            errorCode: 4003,
+          });
+
+          const errorOutput = createRewardsErrorResponse({
+            code: 4003,
+            message: 'Rewards are not enabled for this token. The token does not support the rewards feature.',
+            details: { suggestion: 'This token does not have rewards functionality enabled.' },
+            recoverable: false,
+          });
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(errorOutput, null, 2),
+              },
+            ],
+            isError: true,
+          };
+        }
 
         if (isTempoMcpError(error) && error.name === 'SecurityError') {
           await security.logRejected({
@@ -247,6 +283,36 @@ function registerOptOutRewardsTool(): void {
       } catch (error) {
         const normalized = normalizeError(error);
         const durationMs = Date.now() - ctx.startTime;
+        const errorMessage = (error as Error).message || '';
+
+        // Check for Unauthorized error - means rewards not enabled for this token
+        if (errorMessage.includes('0xaa4bc69a') || errorMessage.includes('Unauthorized')) {
+          await security.logFailure({
+            requestId: ctx.requestId,
+            tool: 'opt_out_rewards',
+            arguments: logArgs,
+            durationMs,
+            errorMessage: 'Rewards not enabled for this token',
+            errorCode: 4003,
+          });
+
+          const errorOutput = createRewardsErrorResponse({
+            code: 4003,
+            message: 'Rewards are not enabled for this token. The token does not support the rewards feature.',
+            details: { suggestion: 'This token does not have rewards functionality enabled.' },
+            recoverable: false,
+          });
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(errorOutput, null, 2),
+              },
+            ],
+            isError: true,
+          };
+        }
 
         if (isTempoMcpError(error) && error.name === 'SecurityError') {
           await security.logRejected({
@@ -367,6 +433,36 @@ function registerClaimRewardsTool(): void {
       } catch (error) {
         const normalized = normalizeError(error);
         const durationMs = Date.now() - ctx.startTime;
+        const errorMessage = (error as Error).message || '';
+
+        // Check for Unauthorized error - means rewards not enabled for this token
+        if (errorMessage.includes('0xaa4bc69a') || errorMessage.includes('Unauthorized')) {
+          await security.logFailure({
+            requestId: ctx.requestId,
+            tool: 'claim_rewards',
+            arguments: logArgs,
+            durationMs,
+            errorMessage: 'Rewards not enabled for this token',
+            errorCode: 4003,
+          });
+
+          const errorOutput = createRewardsErrorResponse({
+            code: 4003,
+            message: 'Rewards are not enabled for this token. The token does not support the rewards feature.',
+            details: { suggestion: 'This token does not have rewards functionality enabled.' },
+            recoverable: false,
+          });
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(errorOutput, null, 2),
+              },
+            ],
+            isError: true,
+          };
+        }
 
         if (isTempoMcpError(error) && error.name === 'SecurityError') {
           await security.logRejected({
@@ -443,11 +539,54 @@ function registerGetPendingRewardsTool(): void {
         const tokenInfo = await tokenService.getTokenInfo(tokenAddress);
         const decimals = tokenInfo.decimals;
 
-        // Get pending rewards and opt-in status
-        const [pendingRewards, isOptedIn] = await Promise.all([
-          rewardsService.getPendingRewards(tokenAddress, account),
-          rewardsService.isOptedIn(tokenAddress, account),
-        ]);
+        // Check opt-in status and pending rewards
+        // These calls may revert with Unauthorized (0xaa4bc69a) if:
+        // 1. Token doesn't support rewards
+        // 2. Rewards feature isn't enabled for the token
+        let isOptedIn = false;
+        let pendingRewards = 0n;
+
+        try {
+          isOptedIn = await rewardsService.isOptedIn(tokenAddress, account);
+
+          // Only query pending rewards if opted in
+          if (isOptedIn) {
+            pendingRewards = await rewardsService.getPendingRewards(tokenAddress, account);
+          }
+        } catch (rewardsError) {
+          const errorMessage = (rewardsError as Error).message || '';
+          // Check for Unauthorized error - means rewards not enabled for this token
+          if (errorMessage.includes('0xaa4bc69a') || errorMessage.includes('Unauthorized')) {
+            // Return response indicating rewards not available
+            const output = {
+              token: tokenAddress,
+              account,
+              pendingRewards: '0',
+              pendingRewardsFormatted: `0 ${tokenInfo.symbol}`,
+              isOptedIn: false,
+              rewardsEnabled: false,
+              message: 'Rewards are not enabled for this token.',
+            };
+
+            await security.logSuccess({
+              requestId: ctx.requestId,
+              tool: 'get_pending_rewards',
+              arguments: logArgs,
+              durationMs: Date.now() - ctx.startTime,
+            });
+
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: JSON.stringify(output, null, 2),
+                },
+              ],
+            };
+          }
+          // Re-throw other errors
+          throw rewardsError;
+        }
 
         // Format response
         const pendingRewardsStr = pendingRewards.toString();
@@ -584,6 +723,36 @@ function registerSetRewardRecipientTool(): void {
       } catch (error) {
         const normalized = normalizeError(error);
         const durationMs = Date.now() - ctx.startTime;
+        const errorMessage = (error as Error).message || '';
+
+        // Check for Unauthorized error - means rewards not enabled for this token
+        if (errorMessage.includes('0xaa4bc69a') || errorMessage.includes('Unauthorized')) {
+          await security.logFailure({
+            requestId: ctx.requestId,
+            tool: 'set_reward_recipient',
+            arguments: logArgs,
+            durationMs,
+            errorMessage: 'Rewards not enabled for this token',
+            errorCode: 4003,
+          });
+
+          const errorOutput = createRewardsErrorResponse({
+            code: 4003,
+            message: 'Rewards are not enabled for this token. The token does not support the rewards feature.',
+            details: { suggestion: 'This token does not have rewards functionality enabled.' },
+            recoverable: false,
+          });
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(errorOutput, null, 2),
+              },
+            ],
+            isError: true,
+          };
+        }
 
         if (isTempoMcpError(error) && error.name === 'SecurityError') {
           await security.logRejected({
@@ -662,7 +831,64 @@ function registerGetRewardStatusTool(): void {
         const symbol = tokenInfo.symbol;
 
         // Get complete reward status
-        const status = await rewardsService.getRewardStatus(tokenAddress, account);
+        // May revert with Unauthorized (0xaa4bc69a) if rewards not enabled
+        let status;
+        try {
+          status = await rewardsService.getRewardStatus(tokenAddress, account);
+        } catch (rewardsError) {
+          const errorMessage = (rewardsError as Error).message || '';
+          // Check for Unauthorized error - means rewards not enabled for this token
+          if (errorMessage.includes('0xaa4bc69a') || errorMessage.includes('Unauthorized')) {
+            // Return response indicating rewards not available
+            // Get balance from tempo client
+            const tempoClient = rewardsService['client'];
+            const balance = await tempoClient.getBalance(tokenAddress, account);
+            const formatAmount = (amount: bigint) => `${formatUnits(amount, decimals)} ${symbol}`;
+
+            const output = {
+              token: tokenAddress,
+              account,
+              isOptedIn: false,
+              rewardsEnabled: false,
+              message: 'Rewards are not enabled for this token.',
+              pendingRewards: '0',
+              pendingRewardsFormatted: `0 ${symbol}`,
+              optedInBalance: '0',
+              optedInBalanceFormatted: `0 ${symbol}`,
+              totalBalance: balance.toString(),
+              totalBalanceFormatted: formatAmount(balance),
+              participationRate: '0.00%',
+              rewardRecipient: null,
+              totalClaimed: '0',
+              totalClaimedFormatted: `0 ${symbol}`,
+              tokenStats: {
+                totalOptedInSupply: '0',
+                totalOptedInSupplyFormatted: `0 ${symbol}`,
+                totalDistributed: '0',
+                totalDistributedFormatted: `0 ${symbol}`,
+              },
+              shareOfPool: '0.00%',
+            };
+
+            await security.logSuccess({
+              requestId: ctx.requestId,
+              tool: 'get_reward_status',
+              arguments: logArgs,
+              durationMs: Date.now() - ctx.startTime,
+            });
+
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: JSON.stringify(output, null, 2),
+                },
+              ],
+            };
+          }
+          // Re-throw other errors
+          throw rewardsError;
+        }
 
         // Calculate participation rate (opted-in / total balance)
         let participationRate = '0.00%';
@@ -734,6 +960,236 @@ function registerGetRewardStatusTool(): void {
           errorMessage: normalized.message,
           errorCode: normalized.code,
         });
+
+        const errorOutput = createRewardsErrorResponse({
+          code: normalized.code,
+          message: normalized.message,
+          details: normalized.details,
+          recoverable: normalized.recoverable,
+          retryAfter: normalized.retryAfter,
+        });
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(errorOutput, null, 2),
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+}
+
+// =============================================================================
+// distribute_rewards Tool
+// =============================================================================
+
+function registerDistributeRewardsTool(): void {
+  server.registerTool(
+    'distribute_rewards',
+    {
+      title: 'Distribute Rewards',
+      description:
+        'Distribute rewards to all opted-in holders of a TIP-20 token. ' +
+        'Rewards are distributed proportionally based on opted-in balances. ' +
+        'Currently only instant rewards (duration=0) are supported. ' +
+        'Time-based streaming rewards are planned for a future Tempo protocol upgrade. ' +
+        'Requires sufficient token balance to fund the reward distribution.',
+      inputSchema: distributeRewardsInputSchema,
+    },
+    async (args: DistributeRewardsInput) => {
+      const ctx = createRequestContext('distribute_rewards');
+      const config = getConfig();
+      const rewardsService = getRewardsService();
+      const tokenService = getTokenService();
+      const security = getSecurityLayer();
+
+      const logArgs = {
+        token: args.token,
+        amount: args.amount,
+        duration: args.duration,
+      };
+
+      try {
+        // Resolve token address
+        const tokenAddress = resolveTokenAddress(args.token);
+
+        // Get token info for decimals
+        const tokenInfo = await tokenService.getTokenInfo(tokenAddress);
+        const decimals = tokenInfo.decimals;
+
+        // Parse amount to wei
+        const amountWei = parseUnits(args.amount, decimals);
+
+        // Execute reward distribution
+        const result = await rewardsService.distributeRewards(
+          tokenAddress,
+          amountWei,
+          args.duration
+        );
+
+        // Get funder address for response
+        const funder = rewardsService['client'].getAddress();
+
+        // Format amount
+        const amountFormatted = `${args.amount} ${tokenInfo.symbol}`;
+
+        // Log success
+        await security.logSuccess({
+          requestId: ctx.requestId,
+          tool: 'distribute_rewards',
+          arguments: logArgs,
+          durationMs: Date.now() - ctx.startTime,
+          transactionHash: result.hash,
+          gasCost: result.gasCost,
+        });
+
+        // Build response
+        const output = createDistributeRewardsResponse({
+          transactionHash: result.hash,
+          blockNumber: result.blockNumber,
+          token: tokenAddress,
+          funder,
+          rewardId: result.rewardId.toString(),
+          amount: amountWei.toString(),
+          amountFormatted,
+          durationSeconds: args.duration,
+          gasCost: result.gasCost,
+          explorerUrl: buildExplorerTxUrl(config.network.explorerUrl, result.hash),
+        });
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(output, null, 2),
+            },
+          ],
+        };
+      } catch (error) {
+        const normalized = normalizeError(error);
+        const durationMs = Date.now() - ctx.startTime;
+        const errorMessage = (error as Error).message || '';
+
+        // Check for NoOptedInSupply error (0xe845980e)
+        // This means no token holders have opted into rewards yet
+        if (errorMessage.includes('0xe845980e') || errorMessage.includes('NoOptedInSupply')) {
+          await security.logFailure({
+            requestId: ctx.requestId,
+            tool: 'distribute_rewards',
+            arguments: logArgs,
+            durationMs,
+            errorMessage: 'No token holders have opted into rewards',
+            errorCode: 4004,
+          });
+
+          const errorOutput = createRewardsErrorResponse({
+            code: 4004,
+            message: 'Cannot distribute rewards: no token holders have opted into rewards yet.',
+            details: {
+              suggestion: 'At least one holder must call opt_in_rewards before rewards can be distributed. ' +
+                          'The opted-in supply must be greater than zero.',
+            },
+            recoverable: true,
+          });
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(errorOutput, null, 2),
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        // Check for ScheduledRewardsDisabled error (0xadf4cab0)
+        // This means time-based streaming rewards (duration > 0) are not yet implemented in Tempo
+        if (errorMessage.includes('0xadf4cab0') || errorMessage.includes('ScheduledRewardsDisabled')) {
+          await security.logFailure({
+            requestId: ctx.requestId,
+            tool: 'distribute_rewards',
+            arguments: logArgs,
+            durationMs,
+            errorMessage: 'Time-based streaming rewards not yet implemented in Tempo protocol',
+            errorCode: 4003,
+          });
+
+          const errorOutput = createRewardsErrorResponse({
+            code: 4003,
+            message: 'Time-based streaming rewards (duration > 0) are not yet implemented in the Tempo protocol. ' +
+                     'This feature is planned for a future upgrade.',
+            details: {
+              suggestion: `Use duration=0 for instant reward distribution instead. You provided duration=${logArgs.duration}. ` +
+                          'Instant rewards are distributed immediately and proportionally to all opted-in holders.',
+              expected: 'duration=0 (instant rewards)',
+              received: `duration=${logArgs.duration}`,
+            },
+            recoverable: true,
+          });
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(errorOutput, null, 2),
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        // Check for Unauthorized error - means rewards not enabled for this token
+        if (errorMessage.includes('0xaa4bc69a') || errorMessage.includes('Unauthorized')) {
+          await security.logFailure({
+            requestId: ctx.requestId,
+            tool: 'distribute_rewards',
+            arguments: logArgs,
+            durationMs,
+            errorMessage: 'Rewards not enabled for this token',
+            errorCode: 4003,
+          });
+
+          const errorOutput = createRewardsErrorResponse({
+            code: 4003,
+            message: 'Rewards are not enabled for this token. The token does not support the rewards feature.',
+            details: { suggestion: 'This token does not have rewards functionality enabled.' },
+            recoverable: false,
+          });
+
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(errorOutput, null, 2),
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        if (isTempoMcpError(error) && error.name === 'SecurityError') {
+          await security.logRejected({
+            requestId: ctx.requestId,
+            tool: 'distribute_rewards',
+            arguments: logArgs,
+            durationMs,
+            rejectionReason: error.message,
+          });
+        } else {
+          await security.logFailure({
+            requestId: ctx.requestId,
+            tool: 'distribute_rewards',
+            arguments: logArgs,
+            durationMs,
+            errorMessage: normalized.message,
+            errorCode: normalized.code,
+          });
+        }
 
         const errorOutput = createRewardsErrorResponse({
           code: normalized.code,
