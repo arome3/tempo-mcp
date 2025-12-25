@@ -186,6 +186,44 @@ New Portfolio:
 | AlphaGBP | 12,992 | 15.0% | 15% ✓ |
 ```
 
+### Distribute Token Rewards
+
+```
+User: Distribute 5000 AlphaUSD as rewards to our token holders
+
+Claude: Let me check the reward pool status first.
+
+[calls get_reward_status]
+{
+  "token": "AlphaUSD"
+}
+
+Current reward pool:
+- Total opted-in supply: 2,500,000 AlphaUSD
+- Opted-in holders: 847 addresses
+- Your balance: 60,000 AlphaUSD
+
+[calls distribute_rewards]
+{
+  "token": "AlphaUSD",
+  "amount": "5000",
+  "duration": 0
+}
+
+Reward distribution complete!
+- Amount: 5,000.00 AlphaUSD
+- Reward ID: #127
+- Distribution: Instant
+- Transaction: 0xabc123...
+
+Rewards have been allocated proportionally to all 847 opted-in holders.
+Each holder can now claim their share based on their balance.
+
+Example allocations:
+- Holder with 25,000 AUSD (1%): receives 50.00 AUSD
+- Holder with 2,500 AUSD (0.1%): receives 5.00 AUSD
+```
+
 ### Spending Analysis
 
 ```
@@ -334,6 +372,8 @@ TREASURY_DRIFT_THRESHOLD=5
 | `swap_stablecoins` | Execute currency conversion |
 | `send_payment` | Outgoing transfers |
 | `spending_report` | Analytics prompt |
+| `distribute_rewards` | Distribute rewards to token holders |
+| `get_reward_status` | Check reward pool and opt-in stats |
 
 ---
 

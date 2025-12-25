@@ -25,23 +25,6 @@ import { InternalError, BlockchainError } from '../utils/errors.js';
  */
 export const TIP20_REWARDS_ABI = [
   // ===========================================================================
-  // Opt-in/Opt-out Functions
-  // ===========================================================================
-  {
-    name: 'optInRewards',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [],
-    outputs: [],
-  },
-  {
-    name: 'optOutRewards',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [],
-    outputs: [],
-  },
-  // ===========================================================================
   // Claiming Functions
   // ===========================================================================
   {
@@ -65,57 +48,53 @@ export const TIP20_REWARDS_ABI = [
   // View Functions
   // ===========================================================================
   {
-    name: 'pendingRewards',
+    // userRewardInfo returns (rewardRecipient, rewardPerToken, rewardBalance)
+    // - rewardRecipient != 0x0 means user is opted in
+    // - rewardBalance is the claimable pending rewards
+    name: 'userRewardInfo',
     type: 'function',
     stateMutability: 'view',
     inputs: [{ name: 'account', type: 'address' }],
-    outputs: [{ name: 'amount', type: 'uint256' }],
+    outputs: [
+      { name: 'rewardRecipient', type: 'address' },
+      { name: 'rewardPerToken', type: 'uint256' },
+      { name: 'rewardBalance', type: 'uint256' },
+    ],
   },
   {
-    name: 'rewardRecipient',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'account', type: 'address' }],
-    outputs: [{ name: 'recipient', type: 'address' }],
-  },
-  {
-    name: 'isOptedInRewards',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'account', type: 'address' }],
-    outputs: [{ name: 'optedIn', type: 'bool' }],
-  },
-  {
-    name: 'totalOptedInSupply',
+    // optedInSupply returns the total supply of tokens opted into rewards
+    name: 'optedInSupply',
     type: 'function',
     stateMutability: 'view',
     inputs: [],
-    outputs: [{ name: 'supply', type: 'uint256' }],
+    outputs: [{ name: 'supply', type: 'uint128' }],
   },
+  // ===========================================================================
+  // Distribution Functions
+  // ===========================================================================
   {
-    name: 'optedInBalance',
+    name: 'startReward',
     type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'account', type: 'address' }],
-    outputs: [{ name: 'balance', type: 'uint256' }],
-  },
-  {
-    name: 'totalRewardsDistributed',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [],
-    outputs: [{ name: 'amount', type: 'uint256' }],
-  },
-  {
-    name: 'totalRewardsClaimed',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'account', type: 'address' }],
-    outputs: [{ name: 'amount', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'amount', type: 'uint256' },
+      { name: 'secs', type: 'uint32' },
+    ],
+    outputs: [{ name: 'rewardId', type: 'uint64' }],
   },
   // ===========================================================================
   // Events
   // ===========================================================================
+  {
+    name: 'RewardScheduled',
+    type: 'event',
+    inputs: [
+      { name: 'funder', type: 'address', indexed: true },
+      { name: 'id', type: 'uint64', indexed: true },
+      { name: 'amount', type: 'uint256', indexed: false },
+      { name: 'durationSeconds', type: 'uint32', indexed: false },
+    ],
+  },
   {
     name: 'RewardsOptIn',
     type: 'event',
@@ -159,6 +138,13 @@ export interface RewardsOperationResult {
 /** Result of claiming rewards */
 export interface ClaimRewardsResult extends RewardsOperationResult {
   amountClaimed: bigint;
+}
+
+/** Result of distributing rewards */
+export interface DistributeRewardsResult extends RewardsOperationResult {
+  rewardId: bigint;
+  amount: bigint;
+  durationSeconds: number;
 }
 
 /** Complete reward status for an account */
@@ -233,6 +219,8 @@ export class RewardsService {
    * After opting in, the holder's balance will be counted for reward
    * distribution and they will start accumulating rewards.
    *
+   * This calls setRewardRecipient with the caller's own address.
+   *
    * @param tokenAddress - TIP-20 token contract address
    * @returns Transaction result
    * @throws Error if wallet not configured or transaction fails
@@ -243,12 +231,15 @@ export class RewardsService {
       throw InternalError.walletNotConfigured();
     }
 
+    // Opt in by setting reward recipient to self
+    const callerAddress = this.client.getAddress();
+
     try {
       const hash = await walletClient.writeContract({
         address: tokenAddress,
         abi: TIP20_REWARDS_ABI,
-        functionName: 'optInRewards',
-        args: [],
+        functionName: 'setRewardRecipient',
+        args: [callerAddress],
         feeToken: this.feeToken,
       } as Parameters<typeof walletClient.writeContract>[0]);
 
@@ -299,11 +290,12 @@ export class RewardsService {
     }
 
     try {
+      // Opt out by setting reward recipient to zero address
       const hash = await walletClient.writeContract({
         address: tokenAddress,
         abi: TIP20_REWARDS_ABI,
-        functionName: 'optOutRewards',
-        args: [],
+        functionName: 'setRewardRecipient',
+        args: [ZERO_ADDRESS],
         feeToken: this.feeToken,
       } as Parameters<typeof walletClient.writeContract>[0]);
 
@@ -316,7 +308,7 @@ export class RewardsService {
       };
     } catch (error) {
       const errorMessage = (error as Error).message || '';
-      if (errorMessage.includes('NotOptedIn')) {
+      if (errorMessage.includes('NotOptedIn') || errorMessage.includes('0xaa4bc69a')) {
         throw BlockchainError.transactionReverted(
           `Not currently opted into rewards for this token. ${errorMessage}`
         );
@@ -412,6 +404,100 @@ export class RewardsService {
   }
 
   // ===========================================================================
+  // Distribution Methods
+  // ===========================================================================
+
+  /**
+   * Distribute rewards to all opted-in token holders.
+   *
+   * This starts a reward distribution that allocates tokens proportionally
+   * to all opted-in holders based on their balance. The distribution occurs
+   * over the specified duration in seconds.
+   *
+   * Requirements:
+   * - Caller must have sufficient token balance to fund the rewards
+   * - Token must have rewards enabled
+   *
+   * @param tokenAddress - TIP-20 token contract address
+   * @param amount - Amount of tokens to distribute as rewards
+   * @param durationSeconds - Duration over which to distribute rewards (in seconds)
+   * @returns Transaction result with reward ID
+   * @throws Error if wallet not configured or transaction fails
+   */
+  async distributeRewards(
+    tokenAddress: Address,
+    amount: bigint,
+    durationSeconds: number
+  ): Promise<DistributeRewardsResult> {
+    const walletClient = this.client['walletClient'];
+    if (!walletClient) {
+      throw InternalError.walletNotConfigured();
+    }
+
+    try {
+      const hash = await walletClient.writeContract({
+        address: tokenAddress,
+        abi: TIP20_REWARDS_ABI,
+        functionName: 'startReward',
+        args: [amount, durationSeconds],
+        feeToken: this.feeToken,
+      } as Parameters<typeof walletClient.writeContract>[0]);
+
+      const receipt = await this.client.waitForTransaction(hash);
+
+      // Parse reward ID from RewardScheduled event
+      const rewardId = this.parseRewardId(receipt);
+
+      return {
+        hash,
+        blockNumber: Number(receipt.blockNumber),
+        gasCost: receipt.gasUsed.toString(),
+        rewardId,
+        amount,
+        durationSeconds,
+      };
+    } catch (error) {
+      const errorMessage = (error as Error).message || '';
+      if (errorMessage.includes('RewardsDisabled') || errorMessage.includes('0xaa4bc69a')) {
+        throw BlockchainError.transactionReverted(
+          `Rewards are not enabled for this token. ${errorMessage}`
+        );
+      }
+      if (errorMessage.includes('InsufficientBalance')) {
+        throw BlockchainError.transactionReverted(
+          `Insufficient token balance to fund rewards. ${errorMessage}`
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Parse reward ID from transaction receipt logs.
+   *
+   * @param receipt - Transaction receipt
+   * @returns Reward ID or 0n if not found
+   */
+  private parseRewardId(receipt: { logs: readonly { topics: readonly string[]; data: string }[] }): bigint {
+    // Look for RewardScheduled event
+    // Event signature: RewardScheduled(address indexed funder, uint64 indexed id, uint256 amount, uint32 durationSeconds)
+    for (const log of receipt.logs) {
+      // topics[0] is the event signature
+      // topics[1] is the indexed funder
+      // topics[2] is the indexed id (reward ID)
+      if (log.topics.length >= 3) {
+        try {
+          // The id is in topics[2]
+          return BigInt(log.topics[2]);
+        } catch {
+          // Continue to next log if parsing fails
+        }
+      }
+    }
+    return 0n;
+  }
+
+  // ===========================================================================
   // Recipient Management Methods
   // ===========================================================================
 
@@ -469,6 +555,8 @@ export class RewardsService {
   /**
    * Get pending rewards for an address.
    *
+   * Uses userRewardInfo().rewardBalance to get pending claimable rewards.
+   *
    * @param tokenAddress - TIP-20 token contract address
    * @param address - Address to check (defaults to wallet address)
    * @returns Pending reward amount in token units
@@ -479,18 +567,23 @@ export class RewardsService {
   ): Promise<bigint> {
     const targetAddress = address ?? this.client.getAddress();
 
-    const pending = await this.publicClient.readContract({
+    // Use userRewardInfo to get pending rewards (rewardBalance field)
+    const result = await this.publicClient.readContract({
       address: tokenAddress,
       abi: TIP20_REWARDS_ABI,
-      functionName: 'pendingRewards',
+      functionName: 'userRewardInfo',
       args: [targetAddress],
-    });
+    }) as [Address, bigint, bigint];
 
-    return pending as bigint;
+    // rewardBalance is the third field (index 2)
+    return result[2];
   }
 
   /**
    * Check if an address is opted into rewards.
+   *
+   * Uses userRewardInfo to check if rewardRecipient is set (non-zero).
+   * A user is considered opted-in if they have set a reward recipient.
    *
    * @param tokenAddress - TIP-20 token contract address
    * @param address - Address to check (defaults to wallet address)
@@ -499,18 +592,23 @@ export class RewardsService {
   async isOptedIn(tokenAddress: Address, address?: Address): Promise<boolean> {
     const targetAddress = address ?? this.client.getAddress();
 
-    const optedIn = await this.publicClient.readContract({
+    // Use userRewardInfo to check opted-in status
+    // A user is opted in if their rewardRecipient is non-zero
+    const result = await this.publicClient.readContract({
       address: tokenAddress,
       abi: TIP20_REWARDS_ABI,
-      functionName: 'isOptedInRewards',
+      functionName: 'userRewardInfo',
       args: [targetAddress],
-    });
+    }) as [Address, bigint, bigint];
 
-    return optedIn as boolean;
+    const rewardRecipient = result[0];
+    return rewardRecipient !== ZERO_ADDRESS;
   }
 
   /**
    * Get the reward recipient for an address.
+   *
+   * Uses userRewardInfo to get the reward recipient.
    *
    * @param tokenAddress - TIP-20 token contract address
    * @param address - Address to check (defaults to wallet address)
@@ -522,25 +620,27 @@ export class RewardsService {
   ): Promise<Address | null> {
     const targetAddress = address ?? this.client.getAddress();
 
-    const recipient = await this.publicClient.readContract({
+    // Use userRewardInfo to get the reward recipient
+    const result = await this.publicClient.readContract({
       address: tokenAddress,
       abi: TIP20_REWARDS_ABI,
-      functionName: 'rewardRecipient',
+      functionName: 'userRewardInfo',
       args: [targetAddress],
-    });
+    }) as [Address, bigint, bigint];
 
-    const recipientAddress = recipient as Address;
+    const recipientAddress = result[0];
     return recipientAddress !== ZERO_ADDRESS ? recipientAddress : null;
   }
 
   /**
    * Get the opted-in balance for an address.
    *
-   * This is the balance counted for reward distribution.
+   * When a user is opted in, their entire token balance is counted for
+   * reward distribution. Returns 0 if user is not opted in.
    *
    * @param tokenAddress - TIP-20 token contract address
    * @param address - Address to check (defaults to wallet address)
-   * @returns Opted-in balance
+   * @returns Opted-in balance (equal to token balance if opted in, 0 otherwise)
    */
   async getOptedInBalance(
     tokenAddress: Address,
@@ -548,10 +648,18 @@ export class RewardsService {
   ): Promise<bigint> {
     const targetAddress = address ?? this.client.getAddress();
 
+    // Check if user is opted in using userRewardInfo
+    const isOptedIn = await this.isOptedIn(tokenAddress, targetAddress);
+
+    if (!isOptedIn) {
+      return 0n;
+    }
+
+    // If opted in, opted-in balance equals total balance
     const balance = await this.publicClient.readContract({
       address: tokenAddress,
-      abi: TIP20_REWARDS_ABI,
-      functionName: 'optedInBalance',
+      abi: TIP20_ABI,
+      functionName: 'balanceOf',
       args: [targetAddress],
     });
 
@@ -561,24 +669,20 @@ export class RewardsService {
   /**
    * Get total rewards claimed by an address.
    *
+   * Note: This information is not directly available from the contract.
+   * Returns 0 as a placeholder.
+   *
    * @param tokenAddress - TIP-20 token contract address
    * @param address - Address to check (defaults to wallet address)
-   * @returns Total claimed amount
+   * @returns Total claimed amount (always 0 - not tracked on-chain)
    */
   async getTotalClaimed(
-    tokenAddress: Address,
-    address?: Address
+    _tokenAddress: Address,
+    _address?: Address
   ): Promise<bigint> {
-    const targetAddress = address ?? this.client.getAddress();
-
-    const claimed = await this.publicClient.readContract({
-      address: tokenAddress,
-      abi: TIP20_REWARDS_ABI,
-      functionName: 'totalRewardsClaimed',
-      args: [targetAddress],
-    });
-
-    return claimed as bigint;
+    // Total claimed is not tracked in the contract interface
+    // This would require indexing Transfer events from the token contract
+    return 0n;
   }
 
   /**
@@ -591,7 +695,7 @@ export class RewardsService {
     const supply = await this.publicClient.readContract({
       address: tokenAddress,
       abi: TIP20_REWARDS_ABI,
-      functionName: 'totalOptedInSupply',
+      functionName: 'optedInSupply',
       args: [],
     });
 
@@ -601,18 +705,16 @@ export class RewardsService {
   /**
    * Get total rewards distributed for a token.
    *
+   * Note: This information is not directly available from the contract.
+   * Returns 0 as a placeholder.
+   *
    * @param tokenAddress - TIP-20 token contract address
-   * @returns Total distributed amount
+   * @returns Total distributed amount (always 0 - not tracked on-chain)
    */
-  async getTotalDistributed(tokenAddress: Address): Promise<bigint> {
-    const distributed = await this.publicClient.readContract({
-      address: tokenAddress,
-      abi: TIP20_REWARDS_ABI,
-      functionName: 'totalRewardsDistributed',
-      args: [],
-    });
-
-    return distributed as bigint;
+  async getTotalDistributed(_tokenAddress: Address): Promise<bigint> {
+    // Total distributed is not tracked in the contract interface
+    // This would require indexing RewardScheduled events
+    return 0n;
   }
 
   /**
