@@ -236,7 +236,7 @@ Install [Claude Code](https://docs.anthropic.com/en/docs/claude-code) if you hav
 **1-Click Setup:**
 
 ```bash
-claude mcp add tempo-mcp -e TEMPO_PRIVATE_KEY=0x...
+claude mcp add tempo-mcp -e TEMPO_PRIVATE_KEY=0x... -- npx tempo-mcp
 ```
 
 **Manual Setup:**
