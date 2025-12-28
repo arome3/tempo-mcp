@@ -283,6 +283,33 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
       getBlockNumber: vi.fn().mockResolvedValue(blockNumber),
       getBalance: vi.fn().mockResolvedValue(balance),
       getStorageAt: vi.fn().mockResolvedValue('0x0000000000000000000000000000000000000000000000000000000000000000'),
+      getCode: vi.fn().mockResolvedValue('0x'), // EOA by default (no code)
+      getTransactionCount: vi.fn().mockResolvedValue(10), // Mock tx count
+      getGasPrice: vi.fn().mockResolvedValue(BigInt(15000000)), // Mock gas price
+      estimateFeesPerGas: vi.fn().mockResolvedValue({
+        maxFeePerGas: BigInt(20000000),
+        maxPriorityFeePerGas: BigInt(1000000),
+      }),
+      getTransaction: vi.fn().mockResolvedValue({
+        hash: txHash,
+        from: TEST_ADDRESSES.VALID,
+        to: TEST_TOKENS.ALPHA_USD,
+        value: BigInt(0),
+        gasPrice: BigInt(15000000),
+        blockNumber: blockNumber,
+        blockHash: '0x' + 'ab'.repeat(32),
+        input: '0x',
+        type: 'legacy',
+      }),
+      getTransactionReceipt: vi.fn().mockResolvedValue({
+        status: 'success',
+        blockNumber: blockNumber,
+        gasUsed: BigInt(21000),
+        effectiveGasPrice: BigInt(15000000),
+      }),
+      getBlock: vi.fn().mockResolvedValue({
+        timestamp: BigInt(Math.floor(Date.now() / 1000)),
+      }),
       readContract: vi.fn().mockImplementation(
         ({
           functionName,
@@ -325,6 +352,11 @@ export function createMockTempoClient(options: MockTempoClientOptions = {}) {
           if (functionName === 'symbol') {
             return Promise.resolve(tokenSymbol);
           }
+          if (functionName === 'name') {
+            return Promise.resolve('Alpha USD');
+          }
+          // Don't override totalSupply here - let Fee AMM's totalSupply handler
+          // (later in the chain) return feeAmmDefaults.totalLpSupply
           // Handle rewards-related contract calls
           // userRewardInfo returns (rewardRecipient, rewardPerToken, rewardBalance)
           // - rewardRecipient != 0x0 means user is opted in
