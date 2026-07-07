@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/arome3-tempo-mcp-badge.png)](https://mseep.ai/app/arome3-tempo-mcp)
+
 # tempo-mcp
 
 [![npm](https://img.shields.io/npm/v/tempo-mcp)](https://npmjs.com/package/tempo-mcp)
